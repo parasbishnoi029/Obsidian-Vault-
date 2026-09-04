@@ -1,0 +1,7 @@
+chroma_store/
+data/uploaded_vault/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
