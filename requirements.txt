@@ -1,0 +1,9 @@
+# Core (always needed - lightweight, no torch)
+streamlit==1.38.0
+chromadb==0.5.5
+google-genai>=1.0.0
+
+# Optional - only needed if you select the "Local" embedding backend in the
+# sidebar. Comment these out for cloud deploys to keep the app light and
+# avoid Streamlit Community Cloud's free-tier memory limit (1GB).
+sentence-transformers==3.0.1
