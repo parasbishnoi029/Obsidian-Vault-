@@ -1,7 +1,6 @@
-chroma_store/
+.streamlit/secrets.toml
 data/uploaded_vault/
 __pycache__/
 *.pyc
-.env
 .venv/
-venv/
+.DS_Store
