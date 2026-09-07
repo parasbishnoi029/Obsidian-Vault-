@@ -1,13 +1,9 @@
-
-
-from __future__ import annotations
-
-import hashlib
-import html
 import os
 import shutil
+import hashlib
+import html
+import textwrap
 from pathlib import Path
-from typing import Any
 
 import streamlit as st
 
@@ -17,9 +13,9 @@ from rag.generator import generate_answer
 from rag.vectorstore import SimpleVectorStore
 
 
-# ============================================================================
-# PAGE CONFIGURATION
-# ============================================================================
+# =============================================================================
+# PAGE CONFIG
+# =============================================================================
 
 st.set_page_config(
     page_title="Obsidian Vault Intelligence",
@@ -29,37 +25,40 @@ st.set_page_config(
 )
 
 
-# ============================================================================
-# CONSTANTS
-# ============================================================================
+# =============================================================================
+# CONFIG
+# =============================================================================
 
 SAMPLE_VAULT = Path("data/sample_vault")
 UPLOAD_VAULT = Path("data/uploaded_vault")
 
-DEFAULT_TOP_K = 5
 MIN_TOP_K = 2
 MAX_TOP_K = 10
-
-# Adjust this based on how your vector store represents similarity/distance.
-# If lower scores mean better matches, this is a maximum acceptable distance.
-DEFAULT_MAX_DISTANCE = 1.50
+DEFAULT_TOP_K = 5
 
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+# =============================================================================
+# HELPERS
+# =============================================================================
 
-def get_api_key() -> str | None:
+def clean_html(content: str) -> str:
     """
-    Read the Gemini key from server-side configuration.
+    Critical helper.
 
-    Priority:
-    1. Streamlit Secrets
-    2. Environment variable
-
-    Never request the key through the public UI.
+    Streamlit treats indented Markdown/HTML as a code block.
+    textwrap.dedent removes the indentation.
     """
+    return textwrap.dedent(content).strip()
 
+
+def render_html(content: str):
+    st.markdown(
+        clean_html(content),
+        unsafe_allow_html=True,
+    )
+
+
+def get_api_key():
     try:
         key = st.secrets.get("GEMINI_API_KEY")
         if key:
@@ -68,239 +67,310 @@ def get_api_key() -> str | None:
         pass
 
     key = os.environ.get("GEMINI_API_KEY")
-
     return key.strip() if key else None
 
 
-# ============================================================================
-# VAULT UTILITIES
-# ============================================================================
-
-def get_markdown_files(vault_path: Path) -> list[Path]:
-    """Return all Markdown files recursively."""
-
+def get_markdown_files(vault_path: Path):
     if not vault_path.exists():
         return []
 
     return sorted(
         [
-            path
-            for path in vault_path.rglob("*.md")
-            if path.is_file()
+            file
+            for file in vault_path.rglob("*.md")
+            if file.is_file()
         ]
     )
 
 
-def vault_fingerprint(vault_path: Path) -> str:
-    """
-    Create a stable fingerprint for the vault.
+def get_vault_fingerprint(vault_path: Path):
 
-    The fingerprint changes when:
-    - files are added
-    - files are removed
-    - file contents change
-    """
+    files = get_markdown_files(vault_path)
+
+    if not files:
+        return None
 
     hasher = hashlib.sha256()
 
-    for file_path in get_markdown_files(vault_path):
-
-        relative_path = str(file_path.relative_to(vault_path))
-
-        hasher.update(relative_path.encode("utf-8"))
+    for file in files:
 
         try:
-            hasher.update(file_path.read_bytes())
-        except OSError:
-            # Include unreadable files in a deterministic way.
-            hasher.update(b"UNREADABLE")
+            relative = str(file.relative_to(vault_path))
+            hasher.update(relative.encode())
+
+            hasher.update(file.read_bytes())
+
+        except Exception:
+            continue
 
     return hasher.hexdigest()[:16]
 
 
-def vault_stats(vault_path: Path) -> dict[str, Any]:
-    """Calculate basic vault statistics."""
+def get_vault_stats(vault_path: Path):
 
     files = get_markdown_files(vault_path)
 
-    total_bytes = 0
+    total_size = 0
 
     for file in files:
         try:
-            total_bytes += file.stat().st_size
-        except OSError:
-            continue
+            total_size += file.stat().st_size
+        except Exception:
+            pass
 
     return {
         "files": len(files),
-        "bytes": total_bytes,
-        "fingerprint": vault_fingerprint(vault_path) if files else None,
+        "size": total_size,
+        "fingerprint": get_vault_fingerprint(vault_path),
     }
 
 
-def human_file_size(size: int) -> str:
+def format_size(size):
 
-    units = ["B", "KB", "MB", "GB"]
+    if size < 1024:
+        return f"{size} B"
 
-    value = float(size)
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
 
-    for unit in units:
-
-        if value < 1024 or unit == units[-1]:
-            return f"{value:.1f} {unit}"
-
-        value /= 1024
-
-    return f"{value:.1f} GB"
+    return f"{size / (1024 * 1024):.2f} MB"
 
 
-def save_uploaded_files(uploaded_files: list[Any]) -> int:
-    """
-    Replace the previous uploaded vault with the current upload.
+def get_chunk_count():
 
-    This avoids a serious bug where old uploaded notes remain on disk
-    and accidentally become part of future indexes.
-    """
+    try:
+        store = SimpleVectorStore(
+            CHROMA_DIR,
+            COLLECTION_NAME,
+        )
+
+        return store.count()
+
+    except Exception:
+        return 0
+
+
+def clear_uploaded_vault():
 
     if UPLOAD_VAULT.exists():
         shutil.rmtree(UPLOAD_VAULT)
 
-    UPLOAD_VAULT.mkdir(parents=True, exist_ok=True)
+    UPLOAD_VAULT.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+
+def save_uploaded_files(files):
+
+    clear_uploaded_vault()
 
     saved = 0
 
-    for uploaded_file in uploaded_files:
+    for file in files:
 
-        # Prevent directory traversal.
-        safe_name = Path(uploaded_file.name).name
+        safe_name = Path(file.name).name
 
         if not safe_name.lower().endswith(".md"):
             continue
 
-        target = UPLOAD_VAULT / safe_name
+        destination = UPLOAD_VAULT / safe_name
 
-        target.write_bytes(uploaded_file.getbuffer())
+        with open(destination, "wb") as output:
+            output.write(file.getbuffer())
 
         saved += 1
 
     return saved
 
 
-# ============================================================================
-# INDEX UTILITIES
-# ============================================================================
-
-def vector_store() -> SimpleVectorStore:
-    return SimpleVectorStore(
-        CHROMA_DIR,
-        COLLECTION_NAME,
-    )
-
-
-def index_chunk_count() -> int:
-
-    try:
-        return vector_store().count()
-    except Exception:
-        return 0
-
-
-def index_exists() -> bool:
-    return index_chunk_count() > 0
-
-
-def current_index_is_valid(
-    vault_path: Path,
-    backend: str,
-) -> bool:
-    """
-    Check whether the current persisted index matches the active vault
-    and embedding backend.
-    """
-
-    metadata = st.session_state.get("index_metadata")
-
-    if not metadata:
-        return False
-
-    if not index_exists():
-        return False
-
-    current_fingerprint = vault_fingerprint(vault_path)
-
-    return (
-        metadata.get("vault_fingerprint") == current_fingerprint
-        and metadata.get("backend") == backend
-    )
-
-
-# ============================================================================
+# =============================================================================
 # SESSION STATE
-# ============================================================================
+# =============================================================================
 
-def initialize_session_state() -> None:
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    defaults = {
-        "messages": [],
-        "index_metadata": None,
-        "uploaded_signature": None,
-        "last_build_error": None,
-    }
+if "index_metadata" not in st.session_state:
+    st.session_state.index_metadata = None
 
-    for key, value in defaults.items():
-
-        if key not in st.session_state:
-            st.session_state[key] = value
+if "uploaded_signature" not in st.session_state:
+    st.session_state.uploaded_signature = None
 
 
-initialize_session_state()
+# =============================================================================
+# CSS
+# =============================================================================
 
+def inject_css():
 
-# ============================================================================
-# UI STYLING
-# ============================================================================
-
-def inject_css() -> None:
-
-    st.markdown(
+    render_html(
         """
         <style>
 
-        @import url(
-            'https://fonts.googleapis.com/css2?family=
-            Inter:wght@400;500;600;700&
-            family=Space+Grotesk:wght@500;600;700&
-            display=swap'
-        );
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+
+        /* ==========================================================
+           GLOBAL TOKENS
+        ========================================================== */
 
         :root {
 
-            --bg: #0e0d16;
-            --surface: #171526;
-            --surface-2: #211e35;
+            --bg: #090a12;
 
-            --border: #373154;
-            --border-soft: rgba(255,255,255,0.06);
+            --surface: rgba(20, 22, 35, 0.82);
 
-            --text: #f1eff8;
-            --text-muted: #a6a1bd;
+            --surface-2: rgba(31, 34, 53, 0.85);
+
+            --surface-3: rgba(44, 47, 70, 0.85);
+
+            --border: rgba(255,255,255,0.08);
+
+            --border-bright: rgba(130,125,255,0.45);
+
+            --text: #f4f2ff;
+
+            --text-muted: #9d9bb4;
 
             --violet: #827dff;
-            --violet-glow: rgba(130,125,255,0.28);
 
-            --gold: #e1b55c;
-            --gold-glow: rgba(225,181,92,0.25);
+            --violet-2: #a19eff;
 
-            --green: #65d69c;
-            --red: #ff7777;
+            --gold: #f0b95d;
+
+            --cyan: #55d6ff;
+
+            --green: #63e6a2;
+
+            --red: #ff6b7a;
+
         }
 
+
+        /* ==========================================================
+           APP BACKGROUND
+        ========================================================== */
+
+        [data-testid="stAppViewContainer"] {
+
+            background:
+                radial-gradient(
+                    circle at 10% 15%,
+                    rgba(130,125,255,0.12),
+                    transparent 30%
+                ),
+
+                radial-gradient(
+                    circle at 85% 20%,
+                    rgba(240,185,93,0.08),
+                    transparent 25%
+                ),
+
+                radial-gradient(
+                    circle at 50% 90%,
+                    rgba(85,214,255,0.06),
+                    transparent 30%
+                ),
+
+                var(--bg);
+
+            overflow: hidden;
+
+        }
+
+
+        /* ==========================================================
+           ANIMATED NETWORK BACKGROUND
+        ========================================================== */
+
+        [data-testid="stAppViewContainer"]::before {
+
+            content: "";
+
+            position: fixed;
+
+            inset: 0;
+
+            pointer-events: none;
+
+            opacity: 0.65;
+
+            background-image:
+
+                radial-gradient(
+                    circle,
+                    rgba(130,125,255,0.65) 1px,
+                    transparent 1.5px
+                ),
+
+                radial-gradient(
+                    circle,
+                    rgba(240,185,93,0.5) 1px,
+                    transparent 1.5px
+                );
+
+            background-size:
+
+                140px 140px,
+                210px 210px;
+
+            background-position:
+
+                0 0,
+                60px 90px;
+
+            mask-image:
+
+                radial-gradient(
+                    ellipse at center,
+                    black,
+                    transparent 78%
+                );
+
+            animation:
+                backgroundFloat 25s linear infinite;
+
+        }
+
+
+        @keyframes backgroundFloat {
+
+            0% {
+
+                transform:
+                    translate3d(0,0,0);
+
+            }
+
+            50% {
+
+                transform:
+                    translate3d(-25px,20px,0);
+
+            }
+
+            100% {
+
+                transform:
+                    translate3d(0,0,0);
+
+            }
+
+        }
+
+
+        /* ==========================================================
+           TYPOGRAPHY
+        ========================================================== */
 
         html,
         body,
         [class*="css"] {
 
-            font-family: "Inter", sans-serif;
+            font-family:
+                "Inter",
+                sans-serif;
 
         }
 
@@ -308,275 +378,803 @@ def inject_css() -> None:
         h1,
         h2,
         h3,
-        .brand-title {
+        h4 {
 
-            font-family: "Space Grotesk", sans-serif;
-
-        }
-
-
-        [data-testid="stAppViewContainer"] {
-
-            background:
-                radial-gradient(
-                    circle at 15% 10%,
-                    rgba(109,106,255,0.08),
-                    transparent 28%
-                ),
-
-                radial-gradient(
-                    circle at 85% 20%,
-                    rgba(217,169,78,0.06),
-                    transparent 24%
-                ),
-
-                var(--bg);
+            font-family:
+                "Space Grotesk",
+                sans-serif;
 
         }
 
+
+        /* ==========================================================
+           SIDEBAR
+        ========================================================== */
 
         [data-testid="stSidebar"] {
 
-            background: var(--surface);
+            background:
+
+                linear-gradient(
+                    180deg,
+                    rgba(20,20,34,0.98),
+                    rgba(13,14,25,0.98)
+                );
 
             border-right:
-                1px solid var(--border-soft);
+                1px solid var(--border);
 
         }
 
 
-        /* ------------------------------------------------------------
-           BRAND
-        ------------------------------------------------------------ */
+        [data-testid="stSidebar"]::before {
 
-        .brand {
+            content: "";
+
+            position: absolute;
+
+            inset: 0;
+
+            background:
+
+                radial-gradient(
+                    circle at 30% 20%,
+                    rgba(130,125,255,0.10),
+                    transparent 35%
+                );
+
+            pointer-events: none;
+
+        }
+
+
+        /* ==========================================================
+           BRAND
+        ========================================================== */
+
+        .hero {
+
+            position: relative;
 
             padding:
-                0.6rem 0 1.6rem 0;
+
+                2rem 2.2rem;
+
+            border-radius:
+
+                24px;
+
+            overflow: hidden;
+
+            background:
+
+                linear-gradient(
+                    135deg,
+                    rgba(32,34,53,0.90),
+                    rgba(18,20,33,0.82)
+                );
+
+            border:
+                1px solid var(--border);
+
+            box-shadow:
+
+                0 25px 80px
+                rgba(0,0,0,0.35);
+
+            transform-style:
+                preserve-3d;
+
+            animation:
+                heroFloat 8s ease-in-out infinite;
+
+        }
+
+
+        .hero::before {
+
+            content: "";
+
+            position: absolute;
+
+            width: 400px;
+
+            height: 400px;
+
+            border-radius: 50%;
+
+            background:
+
+                radial-gradient(
+                    circle,
+                    rgba(130,125,255,0.16),
+                    transparent 70%
+                );
+
+            right: -100px;
+
+            top: -200px;
+
+            animation:
+                orbMove 10s ease-in-out infinite alternate;
+
+        }
+
+
+        .hero::after {
+
+            content: "";
+
+            position: absolute;
+
+            width: 260px;
+
+            height: 260px;
+
+            border-radius: 50%;
+
+            background:
+
+                radial-gradient(
+                    circle,
+                    rgba(240,185,93,0.10),
+                    transparent 70%
+                );
+
+            left: -80px;
+
+            bottom: -140px;
+
+        }
+
+
+        @keyframes heroFloat {
+
+            0%, 100% {
+
+                transform:
+                    perspective(1200px)
+                    rotateX(0deg)
+                    rotateY(0deg)
+                    translateY(0);
+
+            }
+
+            50% {
+
+                transform:
+                    perspective(1200px)
+                    rotateX(0.8deg)
+                    rotateY(-0.8deg)
+                    translateY(-4px);
+
+            }
+
+        }
+
+
+        @keyframes orbMove {
+
+            from {
+
+                transform:
+                    translate3d(0,0,0);
+
+            }
+
+            to {
+
+                transform:
+                    translate3d(-40px,60px,40px);
+
+            }
 
         }
 
 
         .brand-row {
 
-            display: flex;
+            position: relative;
 
-            align-items: center;
+            z-index: 2;
 
-            gap: 14px;
+            display:
+
+                flex;
+
+            align-items:
+
+                center;
+
+            gap:
+
+                18px;
 
         }
 
 
         .brand-icon {
 
-            width: 44px;
-            height: 44px;
+            width:
+                58px;
 
-            display: flex;
+            height:
+                58px;
 
-            align-items: center;
+            border-radius:
+                18px;
 
-            justify-content: center;
+            display:
 
-            border-radius: 14px;
+                flex;
+
+            align-items:
+
+                center;
+
+            justify-content:
+
+                center;
+
+            font-size:
+                1.9rem;
 
             background:
+
                 linear-gradient(
-                    145deg,
-                    rgba(130,125,255,0.22),
-                    rgba(225,181,92,0.12)
+                    135deg,
+                    rgba(130,125,255,0.9),
+                    rgba(85,214,255,0.55)
                 );
 
-            border:
-                1px solid rgba(255,255,255,0.09);
-
-            font-size: 1.5rem;
-
             box-shadow:
-                0 12px 30px rgba(0,0,0,0.25);
+
+                0 15px 40px
+                rgba(130,125,255,0.35),
+
+                inset
+                0 1px 1px
+                rgba(255,255,255,0.25);
+
+            transform:
+                translateZ(40px);
 
         }
 
 
         .brand-title {
 
-            margin: 0;
+            font-family:
+                "Space Grotesk",
+                sans-serif;
 
-            font-size: 2rem;
+            font-size:
 
-            font-weight: 700;
+                clamp(
+                    1.8rem,
+                    3vw,
+                    2.7rem
+                );
 
-            letter-spacing: -0.04em;
+            font-weight:
+                700;
 
-            color: var(--text);
+            letter-spacing:
+                -0.05em;
+
+            color:
+                var(--text);
 
         }
 
 
         .brand-subtitle {
 
-            margin-top: 0.4rem;
+            position: relative;
 
-            color: var(--text-muted);
+            z-index: 2;
 
-            font-size: 0.95rem;
+            margin-top:
 
-            max-width: 760px;
+                1rem;
+
+            color:
+
+                var(--text-muted);
+
+            max-width:
+
+                760px;
+
+            font-size:
+
+                1rem;
+
+            line-height:
+
+                1.7;
 
         }
 
 
-        /* ------------------------------------------------------------
-           STEP CARDS
-        ------------------------------------------------------------ */
+        /* ==========================================================
+           STATUS BADGE
+        ========================================================== */
 
-        .step-card {
+        .status-row {
 
-            margin: 0.8rem 0;
+            position: relative;
 
-            padding: 0.85rem;
+            z-index: 2;
 
-            border-radius: 14px;
+            display:
+
+                flex;
+
+            flex-wrap:
+
+                wrap;
+
+            gap:
+
+                10px;
+
+            margin-top:
+
+                1.3rem;
+
+        }
+
+
+        .status-pill {
+
+            padding:
+
+                7px 12px;
+
+            border-radius:
+
+                999px;
+
+            font-size:
+
+                0.75rem;
+
+            font-weight:
+
+                600;
+
+            border:
+
+                1px solid var(--border);
 
             background:
+
+                rgba(255,255,255,0.04);
+
+            color:
+
+                var(--text-muted);
+
+        }
+
+
+        .status-pill.ready {
+
+            color:
+
+                var(--green);
+
+            border-color:
+
+                rgba(99,230,162,0.25);
+
+            background:
+
+                rgba(99,230,162,0.06);
+
+        }
+
+
+        .status-dot {
+
+            display:
+
+                inline-block;
+
+            width:
+
+                7px;
+
+            height:
+
+                7px;
+
+            border-radius:
+
+                50%;
+
+            margin-right:
+
+                6px;
+
+            background:
+
+                var(--green);
+
+            box-shadow:
+
+                0 0 12px
+                var(--green);
+
+            animation:
+
+                pulse 2s infinite;
+
+        }
+
+
+        @keyframes pulse {
+
+            0%,100% {
+
+                opacity: 1;
+
+            }
+
+            50% {
+
+                opacity: 0.4;
+
+            }
+
+        }
+
+
+        /* ==========================================================
+           SIDEBAR CARDS
+        ========================================================== */
+
+        .control-card {
+
+            padding:
+
+                14px;
+
+            margin:
+
+                12px 0;
+
+            border-radius:
+
+                16px;
+
+            background:
+
                 rgba(255,255,255,0.025);
 
             border:
-                1px solid var(--border-soft);
+
+                1px solid var(--border);
+
+            transition:
+
+                transform 0.25s ease,
+                border 0.25s ease,
+                box-shadow 0.25s ease;
+
+        }
+
+
+        .control-card:hover {
+
+            transform:
+
+                perspective(900px)
+                translateY(-3px)
+                rotateX(1deg);
+
+            border-color:
+
+                rgba(130,125,255,0.3);
+
+            box-shadow:
+
+                0 15px 35px
+                rgba(0,0,0,0.25);
 
         }
 
 
         .step-header {
 
-            display: flex;
+            display:
 
-            align-items: center;
+                flex;
 
-            gap: 10px;
+            align-items:
 
-            margin-bottom: 0.55rem;
+                center;
+
+            gap:
+
+                10px;
+
+            margin-bottom:
+
+                12px;
 
         }
 
 
         .step-number {
 
-            width: 26px;
+            width:
 
-            height: 26px;
+                30px;
 
-            border-radius: 50%;
+            height:
 
-            display: flex;
+                30px;
 
-            align-items: center;
+            border-radius:
 
-            justify-content: center;
+                50%;
 
-            font-size: 0.78rem;
+            display:
 
-            font-weight: 700;
+                flex;
 
-            background: var(--surface-2);
+            align-items:
 
-            border: 1px solid var(--border);
+                center;
 
-            color: var(--text-muted);
+            justify-content:
+
+                center;
+
+            font-size:
+
+                0.8rem;
+
+            font-weight:
+
+                700;
+
+            background:
+
+                var(--surface-3);
+
+            border:
+
+                1px solid var(--border);
+
+            color:
+
+                var(--text-muted);
 
         }
 
 
         .step-number.done {
 
-            color: #14100a;
+            background:
 
-            background: var(--gold);
+                linear-gradient(
+                    135deg,
+                    var(--gold),
+                    #d69532
+                );
 
-            border-color: var(--gold);
+            color:
+
+                #1a1207;
+
+            border:
+
+                none;
 
             box-shadow:
-                0 0 16px var(--gold-glow);
+
+                0 0 18px
+                rgba(240,185,93,0.35);
 
         }
 
 
         .step-number.active {
 
-            border-color: var(--violet);
+            background:
+
+                linear-gradient(
+                    135deg,
+                    var(--violet),
+                    var(--cyan)
+                );
+
+            color:
+
+                white;
+
+            border:
+
+                none;
 
             box-shadow:
-                0 0 14px var(--violet-glow);
+
+                0 0 18px
+                rgba(130,125,255,0.4);
 
         }
 
 
         .step-title {
 
-            font-weight: 700;
+            font-weight:
 
-            color: var(--text);
+                700;
 
-            font-size: 0.9rem;
+            font-size:
+
+                0.9rem;
+
+            color:
+
+                var(--text);
 
         }
 
 
         .step-description {
 
-            font-size: 0.75rem;
+            font-size:
 
-            color: var(--text-muted);
+                0.73rem;
+
+            color:
+
+                var(--text-muted);
+
+            margin-top:
+
+                2px;
 
         }
 
 
-        /* ------------------------------------------------------------
-           CHAT
-        ------------------------------------------------------------ */
+        /* ==========================================================
+           CHAT CARDS
+        ========================================================== */
+
+        [data-testid="stVerticalBlockBorderWrapper"] {
+
+            background:
+
+                rgba(23,25,39,0.70);
+
+            border:
+
+                1px solid
+                rgba(255,255,255,0.07);
+
+            border-radius:
+
+                18px;
+
+            box-shadow:
+
+                0 15px 45px
+                rgba(0,0,0,0.18);
+
+            backdrop-filter:
+
+                blur(15px);
+
+            transition:
+
+                transform 0.25s ease,
+                box-shadow 0.25s ease;
+
+        }
+
+
+        [data-testid="stVerticalBlockBorderWrapper"]:hover {
+
+            transform:
+
+                translateY(-2px);
+
+            box-shadow:
+
+                0 20px 55px
+                rgba(0,0,0,0.28);
+
+        }
+
 
         .message-role {
 
-            font-size: 0.7rem;
+            display:
 
-            font-weight: 700;
+                flex;
 
-            letter-spacing: 0.08em;
+            align-items:
 
-            text-transform: uppercase;
+                center;
 
-            margin-bottom: 0.45rem;
+            gap:
+
+                8px;
+
+            font-size:
+
+                0.72rem;
+
+            font-weight:
+
+                700;
+
+            letter-spacing:
+
+                0.1em;
+
+            text-transform:
+
+                uppercase;
+
+            margin-bottom:
+
+                8px;
 
         }
 
 
         .message-role.user {
 
-            color: var(--violet);
+            color:
+
+                var(--violet-2);
 
         }
 
 
         .message-role.assistant {
 
-            color: var(--gold);
+            color:
+
+                var(--gold);
 
         }
 
 
+        /* ==========================================================
+           SOURCE CARDS
+        ========================================================== */
+
         .source-card {
 
-            padding: 0.75rem;
+            padding:
 
-            margin-bottom: 0.7rem;
+                13px;
 
-            border-radius: 10px;
+            border-radius:
+
+                12px;
+
+            margin-bottom:
+
+                10px;
 
             background:
+
                 rgba(255,255,255,0.025);
 
+            border:
+
+                1px solid var(--border);
+
             border-left:
+
                 3px solid var(--gold);
 
         }
@@ -584,100 +1182,164 @@ def inject_css() -> None:
 
         .source-name {
 
-            font-family:
-                "Space Grotesk",
-                monospace;
+            font-weight:
 
-            font-weight: 600;
+                700;
 
-            color: var(--text);
+            color:
+
+                var(--text);
+
+            margin-bottom:
+
+                4px;
 
         }
 
 
         .source-score {
 
-            font-size: 0.78rem;
+            font-size:
 
-            color: var(--text-muted);
+                0.75rem;
+
+            color:
+
+                var(--text-muted);
 
         }
 
 
-        /* ------------------------------------------------------------
-           METRICS
-        ------------------------------------------------------------ */
+        /* ==========================================================
+           BUTTONS
+        ========================================================== */
 
-        [data-testid="stMetric"] {
+        .stButton button {
 
-            padding: 0.7rem;
+            border-radius:
 
-            border-radius: 12px;
+                12px;
 
-            background:
-                rgba(255,255,255,0.025);
+            font-weight:
+
+                600;
 
             border:
-                1px solid var(--border-soft);
+
+                1px solid
+                rgba(130,125,255,0.35);
+
+            background:
+
+                linear-gradient(
+                    135deg,
+                    rgba(130,125,255,0.22),
+                    rgba(85,214,255,0.10)
+                );
+
+            transition:
+
+                transform 0.2s ease,
+                box-shadow 0.2s ease;
+
+        }
+
+
+        .stButton button:hover {
+
+            transform:
+
+                translateY(-2px)
+                scale(1.01);
+
+            box-shadow:
+
+                0 10px 30px
+                rgba(130,125,255,0.2);
+
+        }
+
+
+        /* ==========================================================
+           INPUTS
+        ========================================================== */
+
+        [data-testid="stChatInput"] {
+
+            border-radius:
+
+                18px;
+
+            border:
+
+                1px solid
+                rgba(130,125,255,0.20);
+
+            background:
+
+                rgba(30,32,47,0.92);
+
+            box-shadow:
+
+                0 15px 45px
+                rgba(0,0,0,0.25);
+
+        }
+
+
+        /* ==========================================================
+           MOBILE
+        ========================================================== */
+
+        @media (max-width: 768px) {
+
+            .hero {
+
+                padding:
+
+                    1.4rem;
+
+            }
+
+            .brand-title {
+
+                font-size:
+
+                    1.7rem;
+
+            }
 
         }
 
         </style>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 inject_css()
 
 
-# ============================================================================
-# UI COMPONENTS
-# ============================================================================
-
-def render_brand() -> None:
-
-    st.markdown(
-        """
-        <div class="brand">
-
-            <div class="brand-row">
-
-                <div class="brand-icon">◈</div>
-
-                <div>
-                    <div class="brand-title">
-                        Obsidian Vault Intelligence
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="brand-subtitle">
-
-                Ask questions about your Markdown knowledge base.
-                Answers are generated from retrieved evidence, not guesswork.
-
-            </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+# =============================================================================
+# COMPONENTS
+# =============================================================================
 
 def render_step(
-    number: int,
-    title: str,
-    description: str,
-    *,
-    done: bool = False,
-    active: bool = False,
-) -> None:
+    number,
+    title,
+    description,
+    done=False,
+    active=False,
+):
 
-    state = "done" if done else "active" if active else ""
+    state = ""
 
-    st.markdown(
+    if done:
+        state = "done"
+
+    elif active:
+        state = "active"
+
+    render_html(
         f"""
         <div class="step-header">
 
@@ -698,95 +1360,57 @@ def render_step(
             </div>
 
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
-def render_message(role: str, content: str) -> None:
+def render_message(role, content):
 
-    label = "Assistant" if role == "assistant" else "You"
+    label = (
+        "INTELLIGENCE"
+        if role == "assistant"
+        else "YOU"
+    )
 
     with st.container(border=True):
 
-        st.markdown(
-            f'<div class="message-role {role}">{label}</div>',
-            unsafe_allow_html=True,
+        render_html(
+            f"""
+            <div class="message-role {role}">
+                ◈ {label}
+            </div>
+            """
         )
 
         st.markdown(content)
 
 
-def render_index_status(
-    vault_path: Path,
-    backend: str,
-    index_valid: bool,
-) -> None:
-
-    stats = vault_stats(vault_path)
-
-    chunks = index_chunk_count()
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "Notes",
-        stats["files"],
-    )
-
-    col2.metric(
-        "Chunks",
-        chunks,
-    )
-
-    col3.metric(
-        "Engine",
-        backend.title(),
-    )
-
-    if index_valid:
-
-        st.success("Knowledge index is ready and matches the active vault.")
-
-    elif chunks > 0:
-
-        st.warning(
-            "An index exists, but it does not match the current vault "
-            "or embedding backend. Rebuild before querying."
-        )
-
-    else:
-
-        st.info(
-            "No knowledge index exists yet."
-        )
-
-
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
+# =============================================================================
+# API
+# =============================================================================
 
 api_key = get_api_key()
 
-render_brand()
 
-
-# ============================================================================
+# =============================================================================
 # SIDEBAR
-# ============================================================================
+# =============================================================================
 
 with st.sidebar:
 
-    st.markdown("## Vault Control")
+    st.markdown("## ◈ Vault Control")
 
-    # ----------------------------------------------------------------------
-    # STEP 1 — VAULT
-    # ----------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # VAULT
+    # -------------------------------------------------------------------------
 
-    st.markdown('<div class="step-card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="control-card">',
+        unsafe_allow_html=True,
+    )
 
     source_choice = st.radio(
-        "Vault source",
+        "Vault Source",
         [
             "Sample vault",
             "Upload Markdown files",
@@ -798,81 +1422,80 @@ with st.sidebar:
 
         active_vault = SAMPLE_VAULT
 
-        vault_ready = len(get_markdown_files(active_vault)) > 0
-
-        render_step(
-            1,
-            "Select Vault",
-            "Using the repository sample knowledge vault",
-            done=vault_ready,
-            active=not vault_ready,
-        )
-
     else:
 
         uploaded_files = st.file_uploader(
             "Upload Markdown files",
             type=["md"],
             accept_multiple_files=True,
-            label_visibility="collapsed",
         )
 
         if uploaded_files:
 
-            upload_signature = hashlib.sha256(
+            signature = hashlib.sha256(
                 "".join(
-                    f"{file.name}:{file.size}"
+                    f"{file.name}-{file.size}"
                     for file in uploaded_files
-                ).encode("utf-8")
+                ).encode()
             ).hexdigest()
 
-            if (
-                upload_signature
-                != st.session_state.get("uploaded_signature")
-            ):
+            if signature != st.session_state.uploaded_signature:
 
-                saved = save_uploaded_files(uploaded_files)
+                saved = save_uploaded_files(
+                    uploaded_files
+                )
 
-                st.session_state["uploaded_signature"] = upload_signature
+                st.session_state.uploaded_signature = signature
 
                 st.toast(
-                    f"Loaded {saved} Markdown file(s).",
+                    f"{saved} note(s) loaded",
                     icon="📚",
                 )
 
         active_vault = UPLOAD_VAULT
 
-        vault_ready = (
-            len(get_markdown_files(active_vault)) > 0
+    vault_stats = get_vault_stats(
+        active_vault
+    )
+
+    vault_ready = vault_stats["files"] > 0
+
+    render_step(
+        1,
+        "Select Vault",
+        (
+            f"{vault_stats['files']} Markdown notes ready"
+            if vault_ready
+            else "Choose a vault to continue"
+        ),
+        done=vault_ready,
+        active=not vault_ready,
+    )
+
+    if vault_ready:
+
+        st.caption(
+            f"📄 {vault_stats['files']} files "
+            f"• {format_size(vault_stats['size'])}"
         )
 
-        render_step(
-            1,
-            "Select Vault",
-            "Upload one or more Markdown notes",
-            done=vault_ready,
-            active=not vault_ready,
-        )
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-        if vault_ready:
 
-            stats = vault_stats(active_vault)
+    # -------------------------------------------------------------------------
+    # BACKEND
+    # -------------------------------------------------------------------------
 
-            st.caption(
-                f"{stats['files']} note(s) • "
-                f"{human_file_size(stats['bytes'])}"
-            )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ----------------------------------------------------------------------
-    # STEP 2 — BACKEND
-    # ----------------------------------------------------------------------
-
-    st.markdown('<div class="step-card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="control-card">',
+        unsafe_allow_html=True,
+    )
 
     backend_label = st.radio(
-        "Embedding backend",
+        "Embedding Engine",
         [
             "Gemini",
             "Local sentence-transformers",
@@ -887,169 +1510,193 @@ with st.sidebar:
     )
 
     backend_ready = (
-        vault_ready
-        and (
-            backend == "local"
-            or bool(api_key)
-        )
+        backend == "local"
+        or bool(api_key)
     )
 
     render_step(
         2,
         "Embedding Engine",
         (
-            "Gemini embeddings"
+            "Gemini cloud embeddings"
             if backend == "gemini"
-            else "Local embeddings — no API key required"
+            else "Local private embeddings"
         ),
         done=backend_ready,
-        active=vault_ready and not backend_ready,
+        active=not backend_ready,
     )
 
     if backend == "gemini" and not api_key:
 
         st.warning(
-            "Gemini is selected, but GEMINI_API_KEY is not configured "
-            "on the server. Switch to Local or configure Streamlit Secrets."
+            "Gemini API key is not configured. "
+            "Switch to Local or configure GEMINI_API_KEY."
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ----------------------------------------------------------------------
-    # STEP 3 — INDEX
-    # ----------------------------------------------------------------------
-
-    index_valid = current_index_is_valid(
-        active_vault,
-        backend,
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="step-card">', unsafe_allow_html=True)
+
+    # -------------------------------------------------------------------------
+    # INDEX
+    # -------------------------------------------------------------------------
+
+    chunk_count = get_chunk_count()
+
+    current_fingerprint = vault_stats["fingerprint"]
+
+    metadata = (
+        st.session_state.index_metadata
+    )
+
+    index_ready = (
+        metadata is not None
+        and metadata.get("fingerprint")
+        == current_fingerprint
+        and metadata.get("backend")
+        == backend
+        and chunk_count > 0
+    )
+
+    st.markdown(
+        '<div class="control-card">',
+        unsafe_allow_html=True,
+    )
 
     render_step(
         3,
-        "Build Knowledge Index",
+        "Knowledge Index",
         (
-            "Ready to query"
-            if index_valid
-            else "Chunk and embed the active vault"
+            f"{chunk_count} chunks ready"
+            if index_ready
+            else "Build semantic knowledge index"
         ),
-        done=index_valid,
-        active=backend_ready and not index_valid,
+        done=index_ready,
+        active=vault_ready and backend_ready and not index_ready,
     )
 
-    build_disabled = not backend_ready
-
     if st.button(
-        "Build / Rebuild Index",
+        "⚡ Build / Rebuild Index",
         use_container_width=True,
-        disabled=build_disabled,
+        disabled=not (
+            vault_ready
+            and backend_ready
+        ),
     ):
 
         with st.spinner(
-            "Reading notes, chunking documents and building embeddings..."
+            "Reading notes and building vector intelligence..."
         ):
 
             try:
 
-                chunk_count = build_index(
+                count = build_index(
                     str(active_vault),
                     backend=backend,
                     api_key=api_key,
                 )
 
-                if chunk_count <= 0:
+                if count > 0:
 
-                    st.session_state["index_metadata"] = None
+                    st.session_state.index_metadata = {
 
-                    st.error(
-                        "No chunks were created. "
-                        "Check that the vault contains readable Markdown files."
+                        "fingerprint":
+                            get_vault_fingerprint(
+                                active_vault
+                            ),
+
+                        "backend":
+                            backend,
+
+                        "chunks":
+                            count,
+
+                    }
+
+                    st.session_state.messages = []
+
+                    st.success(
+                        f"Index ready: {count} chunks"
                     )
+
+                    st.rerun()
 
                 else:
 
-                    stats = vault_stats(active_vault)
-
-                    st.session_state["index_metadata"] = {
-                        "vault_fingerprint": stats["fingerprint"],
-                        "backend": backend,
-                        "vault_path": str(active_vault),
-                        "chunk_count": chunk_count,
-                    }
-
-                    # Prevent old answers from being confused with a new index.
-                    st.session_state["messages"] = []
-
-                    st.success(
-                        f"Knowledge index built successfully: "
-                        f"{chunk_count} chunks."
+                    st.warning(
+                        "No chunks were created."
                     )
 
-                    st.toast(
-                        "Index is ready. Conversation was reset.",
-                        icon="✓",
-                    )
-
-            except Exception:
-
-                st.session_state["index_metadata"] = None
-
-                st.session_state["last_build_error"] = True
+            except Exception as error:
 
                 st.error(
-                    "Indexing failed. Check the server logs and verify "
-                    "your embedding configuration."
+                    "Index build failed."
                 )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+                with st.expander(
+                    "Technical details"
+                ):
+                    st.exception(error)
 
-    # ----------------------------------------------------------------------
-    # STATUS
-    # ----------------------------------------------------------------------
-
-    st.divider()
-
-    st.markdown("### Index Status")
-
-    render_index_status(
-        active_vault,
-        backend,
-        index_valid,
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    # ----------------------------------------------------------------------
-    # RETRIEVAL SETTINGS
-    # ----------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # RETRIEVAL
+    # -------------------------------------------------------------------------
 
     st.divider()
 
-    st.markdown("### Retrieval")
+    st.markdown(
+        "### Retrieval Intelligence"
+    )
 
     top_k = st.slider(
-        "Chunks to retrieve",
+        "Evidence chunks",
         MIN_TOP_K,
         MAX_TOP_K,
         DEFAULT_TOP_K,
     )
 
-    max_distance = st.slider(
-        "Maximum retrieval distance",
-        min_value=0.10,
-        max_value=3.00,
-        value=DEFAULT_MAX_DISTANCE,
-        step=0.05,
-        help=(
-            "Lower is stricter. Results with worse scores are discarded. "
-            "Tune this based on your vector store's distance metric."
-        ),
-    )
 
-    # ----------------------------------------------------------------------
-    # CONVERSATION CONTROL
-    # ----------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # STATUS
+    # -------------------------------------------------------------------------
 
-    if st.session_state["messages"]:
+    st.divider()
+
+    if index_ready:
+
+        render_html(
+            """
+            <div class="status-pill ready">
+                <span class="status-dot"></span>
+                Knowledge Index Online
+            </div>
+            """
+        )
+
+    else:
+
+        render_html(
+            """
+            <div class="status-pill">
+                ○ Index Offline
+            </div>
+            """
+        )
+
+
+    # -------------------------------------------------------------------------
+    # CLEAR CHAT
+    # -------------------------------------------------------------------------
+
+    if st.session_state.messages:
 
         st.divider()
 
@@ -1058,16 +1705,93 @@ with st.sidebar:
             use_container_width=True,
         ):
 
-            st.session_state["messages"] = []
+            st.session_state.messages = []
 
             st.rerun()
 
 
-# ============================================================================
-# CHAT HISTORY
-# ============================================================================
+# =============================================================================
+# MAIN HERO
+# =============================================================================
 
-for message in st.session_state["messages"]:
+status_class = (
+    "ready"
+    if index_ready
+    else ""
+)
+
+status_text = (
+    "Knowledge index online"
+    if index_ready
+    else "Knowledge index needs building"
+)
+
+
+render_html(
+    f"""
+    <div class="hero">
+
+        <div class="brand-row">
+
+            <div class="brand-icon">
+                ◈
+            </div>
+
+            <div>
+
+                <div class="brand-title">
+                    Obsidian Vault Intelligence
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="brand-subtitle">
+
+            Turn your Markdown vault into an intelligent,
+            searchable knowledge system.
+
+            Every answer is generated from retrieved evidence
+            inside your vault.
+
+        </div>
+
+
+        <div class="status-row">
+
+            <div class="status-pill {status_class}">
+                {status_text}
+            </div>
+
+            <div class="status-pill">
+                {vault_stats["files"]} Notes
+            </div>
+
+            <div class="status-pill">
+                {chunk_count} Knowledge Chunks
+            </div>
+
+            <div class="status-pill">
+                {backend.title()} Engine
+            </div>
+
+        </div>
+
+    </div>
+    """
+)
+
+
+st.write("")
+
+
+# =============================================================================
+# CHAT HISTORY
+# =============================================================================
+
+for message in st.session_state.messages:
 
     render_message(
         message["role"],
@@ -1075,43 +1799,87 @@ for message in st.session_state["messages"]:
     )
 
 
-# ============================================================================
+# =============================================================================
 # EMPTY STATE
-# ============================================================================
+# =============================================================================
 
-if not st.session_state["messages"]:
+if not st.session_state.messages:
 
-    if index_valid:
+    if index_ready:
 
         st.info(
-            "The knowledge index is ready. "
-            "Ask a question about your notes below."
+            "Your knowledge system is ready. "
+            "Ask a question or try one of the examples below."
         )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+
+            if st.button(
+                "📚 Summarize my notes",
+                use_container_width=True,
+            ):
+
+                st.session_state.quick_question = (
+                    "Give me a concise summary of the most important "
+                    "information in this vault."
+                )
+
+        with col2:
+
+            if st.button(
+                "🔍 Find key concepts",
+                use_container_width=True,
+            ):
+
+                st.session_state.quick_question = (
+                    "What are the most important concepts in these notes?"
+                )
+
+        with col3:
+
+            if st.button(
+                "🧠 Explain connections",
+                use_container_width=True,
+            ):
+
+                st.session_state.quick_question = (
+                    "What important connections exist between the notes?"
+                )
 
     else:
 
         st.info(
-            "Select a vault, configure an embedding engine, "
-            "and build the index."
+            "Complete the three steps in Vault Control to activate "
+            "your knowledge intelligence system."
         )
 
 
-# ============================================================================
-# CHAT INPUT
-# ============================================================================
+# =============================================================================
+# QUESTION INPUT
+# =============================================================================
+
+quick_question = st.session_state.pop(
+    "quick_question",
+    None,
+)
 
 question = st.chat_input(
     "Ask something about your knowledge vault..."
 )
 
+if quick_question:
+    question = quick_question
+
+
+# =============================================================================
+# RAG PIPELINE
+# =============================================================================
 
 if question:
 
-    # ----------------------------------------------------------------------
-    # USER MESSAGE
-    # ----------------------------------------------------------------------
-
-    st.session_state["messages"].append(
+    st.session_state.messages.append(
         {
             "role": "user",
             "content": question,
@@ -1123,37 +1891,31 @@ if question:
         question,
     )
 
-    chunks: list[dict[str, Any]] = []
+    chunks = []
 
-    # ----------------------------------------------------------------------
-    # VALIDATION
-    # ----------------------------------------------------------------------
 
-    if not index_valid:
+    # -------------------------------------------------------------------------
+    # VALIDATE
+    # -------------------------------------------------------------------------
 
-        answer = (
-            "The active knowledge index is missing or does not match "
-            "the currently selected vault/backend. "
-            "Rebuild the index from the sidebar first."
-        )
-
-    elif backend == "gemini" and not api_key:
+    if not index_ready:
 
         answer = (
-            "This configuration requires Gemini, but the server does not "
-            "currently have a GEMINI_API_KEY configured."
+            "The knowledge index is not ready for the currently selected "
+            "vault and embedding engine. Build the index first."
         )
+
+
+    # -------------------------------------------------------------------------
+    # RETRIEVE + GENERATE
+    # -------------------------------------------------------------------------
 
     else:
-
-        # ------------------------------------------------------------------
-        # RETRIEVAL + GENERATION
-        # ------------------------------------------------------------------
 
         try:
 
             with st.spinner(
-                "Searching the vault and checking evidence..."
+                "Searching knowledge graph..."
             ):
 
                 chunks = retrieve(
@@ -1162,28 +1924,18 @@ if question:
                     api_key=api_key,
                 )
 
-            # --------------------------------------------------------------
-            # RETRIEVAL CONFIDENCE FILTER
-            # --------------------------------------------------------------
-
-            chunks = [
-                chunk
-                for chunk in chunks
-                if float(chunk.get("score", float("inf")))
-                <= max_distance
-            ]
 
             if not chunks:
 
                 answer = (
-                    "I couldn't find sufficiently relevant evidence in the "
-                    "current vault to answer that reliably."
+                    "I could not find relevant evidence in the vault "
+                    "to answer this reliably."
                 )
 
             else:
 
                 with st.spinner(
-                    "Generating a grounded answer..."
+                    "Generating grounded answer..."
                 ):
 
                     answer = generate_answer(
@@ -1192,71 +1944,99 @@ if question:
                         api_key=api_key,
                     )
 
-        except Exception:
+
+        except Exception as error:
+
+            answer = (
+                "Something went wrong while processing your question."
+            )
 
             chunks = []
 
-            answer = (
-                "The request could not be completed. "
-                "Check the server logs, embedding backend, and API configuration."
-            )
+            with st.expander(
+                "Technical details"
+            ):
 
-    # ----------------------------------------------------------------------
-    # ASSISTANT MESSAGE
-    # ----------------------------------------------------------------------
+                st.exception(error)
+
+
+    # -------------------------------------------------------------------------
+    # DISPLAY ANSWER
+    # -------------------------------------------------------------------------
 
     render_message(
         "assistant",
         answer,
     )
 
-    st.session_state["messages"].append(
+    st.session_state.messages.append(
         {
             "role": "assistant",
             "content": answer,
         }
     )
 
-    # ----------------------------------------------------------------------
-    # EVIDENCE PANEL
-    # ----------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # SOURCES
+    # -------------------------------------------------------------------------
 
     if chunks:
 
         with st.expander(
-            f"Evidence used — {len(chunks)} retrieved chunk(s)",
-            expanded=False,
+            f"◈ Evidence Used — {len(chunks)} Retrieved Chunks"
         ):
 
-            for index, chunk in enumerate(chunks, start=1):
+            for index, chunk in enumerate(
+                chunks,
+                start=1,
+            ):
 
                 source = html.escape(
-                    str(chunk.get("source", "Unknown source"))
+                    str(
+                        chunk.get(
+                            "source",
+                            "Unknown source",
+                        )
+                    )
                 )
 
-                score = float(
-                    chunk.get("score", 0)
+                score = chunk.get(
+                    "score",
+                    None,
                 )
 
                 text = str(
-                    chunk.get("text", "")
+                    chunk.get(
+                        "text",
+                        "",
+                    )
                 )
 
-                st.markdown(
+                score_text = (
+                    f"Similarity distance: {float(score):.3f}"
+                    if score is not None
+                    else "Retrieved evidence"
+                )
+
+                render_html(
                     f"""
                     <div class="source-card">
 
                         <div class="source-name">
+
                             {index}. {source}
+
                         </div>
 
                         <div class="source-score">
-                            Retrieval distance: {score:.3f}
+
+                            {score_text}
+
                         </div>
 
                     </div>
-                    """,
-                    unsafe_allow_html=True,
+                    """
                 )
 
                 st.code(
@@ -1268,4 +2048,3 @@ if question:
                     ),
                     language="markdown",
                 )
-
