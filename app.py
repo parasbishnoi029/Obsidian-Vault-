@@ -13,14 +13,27 @@ Flow:
 import os
 import streamlit as st
 
-from rag.ingest import build_index
+from rag.ingest import build_index, CHROMA_DIR, COLLECTION_NAME
 from rag.retriever import retrieve
 from rag.generator import generate_answer
+from rag.vectorstore import SimpleVectorStore
 
 st.set_page_config(page_title="Obsidian Vault RAG Assistant", page_icon="🧠", layout="wide")
 
 SAMPLE_VAULT = "data/sample_vault"
 UPLOAD_VAULT = "data/uploaded_vault"
+
+def _index_exists_on_disk(persist_dir: str = CHROMA_DIR) -> bool:
+    """True if a previously built index is persisted, so a page reload
+    doesn't force the user to rebuild before asking a question."""
+    try:
+        return SimpleVectorStore(persist_dir, COLLECTION_NAME).count() > 0
+    except Exception:
+        return False
+
+
+if "index_built" not in st.session_state:
+    st.session_state["index_built"] = _index_exists_on_disk()
 
 st.title("🧠 Obsidian Vault RAG Knowledge Assistant")
 st.caption("Ask questions about your notes. Answers are grounded only in what's actually in the vault.")
@@ -28,14 +41,26 @@ st.caption("Ask questions about your notes. Answers are grounded only in what's 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
     st.header("1. Gemini API key")
+    # Kept in st.session_state (private to this browser session) rather than
+    # os.environ, which is one shared process-wide dict on Streamlit Cloud —
+    # writing a key there leaks it to every other visitor's session. The
+    # widget also isn't pre-filled with a stored value, since Streamlit's
+    # password field can be un-hidden with its eye icon; pre-filling it would
+    # let anyone who opens the (public) app reveal whatever key is loaded.
     key_input = st.text_input(
         "GEMINI_API_KEY", type="password",
-        value=os.environ.get("GEMINI_API_KEY", ""),
+        value="",
+        placeholder="Paste your key here (re-enter each session)",
         help="Free key at https://aistudio.google.com/apikey. Needed for both "
-             "embeddings (Gemini backend) and answer generation."
+             "embeddings (Gemini backend) and answer generation. Not stored "
+             "anywhere - you'll need to re-enter it if you reload the page."
     )
     if key_input:
-        os.environ["GEMINI_API_KEY"] = key_input
+        st.session_state["gemini_api_key"] = key_input
+
+    api_key = st.session_state.get("gemini_api_key")
+    if api_key:
+        st.caption("✅ Key set for this session")
 
     st.header("2. Vault")
     source_choice = st.radio("Use which notes?", ["Sample vault (demo)", "Upload my own .md files"])
@@ -65,14 +90,15 @@ with st.sidebar:
     if st.button("🔨 Build / Rebuild Index", use_container_width=True):
         if not os.path.isdir(active_vault) or not os.listdir(active_vault):
             st.error("No notes found in the selected vault.")
-        elif backend_key == "gemini" and not os.environ.get("GEMINI_API_KEY"):
+        elif backend_key == "gemini" and not api_key:
             st.error("Gemini backend selected but no API key is set above.")
         else:
             with st.spinner("Chunking + embedding notes..."):
                 try:
-                    n = build_index(active_vault, backend=backend_key)
+                    n = build_index(active_vault, backend=backend_key, api_key=api_key)
                     st.success(f"Indexed {n} chunks from {active_vault} using the {backend_key} backend.")
                     st.session_state["index_built"] = True
+                    st.session_state["index_backend"] = backend_key
                 except Exception as e:
                     st.error(f"Indexing failed: {e}")
 
@@ -95,14 +121,20 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching vault + generating answer..."):
-            try:
-                chunks = retrieve(question, top_k=top_k)
-            except Exception as e:
-                chunks = []
-                st.error(f"Retrieval failed: {e}")
-            answer = generate_answer(question, chunks)
-        st.markdown(answer)
+        if not st.session_state.get("index_built"):
+            answer = ("No index has been built yet. Click **🔨 Build / Rebuild Index** "
+                       "in the sidebar first, then ask again.")
+            chunks = []
+            st.warning(answer)
+        else:
+            with st.spinner("Searching vault + generating answer..."):
+                try:
+                    chunks = retrieve(question, top_k=top_k, api_key=api_key)
+                except Exception as e:
+                    chunks = []
+                    st.error(f"Retrieval failed: {e}")
+                answer = generate_answer(question, chunks, api_key=api_key)
+            st.markdown(answer)
 
         if chunks:
             with st.expander(f"📎 Sources used ({len(chunks)} chunks)"):
