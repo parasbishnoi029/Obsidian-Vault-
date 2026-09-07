@@ -1,25 +1,4 @@
-```python
-"""
-Obsidian Vault RAG Knowledge Assistant
-=======================================
 
-Production-oriented Streamlit interface for querying Markdown knowledge vaults.
-
-Key improvements over the basic implementation:
-- Vault fingerprinting prevents querying the wrong index
-- Safe upload handling and stale-file cleanup
-- Explicit index metadata persisted in session state
-- Backend/index mismatch detection
-- Retrieval confidence checks
-- Better error handling
-- Index health dashboard
-- Conversation invalidation after rebuilding
-- Safer source rendering
-- More maintainable CSS token system
-- Cleaner application architecture
-
-The Gemini API key is read only from Streamlit Secrets or environment variables.
-"""
 
 from __future__ import annotations
 
@@ -1289,4 +1268,4 @@ if question:
                     ),
                     language="markdown",
                 )
-```
+
