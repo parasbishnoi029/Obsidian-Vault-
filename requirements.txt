@@ -1,7 +1,21 @@
-# Core (always needed - lightweight, no torch)
-streamlit==1.38.0
-chromadb==0.5.5
+# streamlit: lower-bound only, no upper pin. Streamlit Community Cloud updates
+# its Python version quickly (currently 3.14), and old pins like
+# streamlit==1.38.0 drag in an old Pillow with no prebuilt wheel for the
+# current Python - it then tries to compile from source and fails.
+streamlit>=1.38.0
+
+# chromadb: pinned tightly to the 0.5.x line this code was actually built and
+# tested against. Chroma's changelog is ambiguous about exactly which release
+# introduced its Rust-rewrite breaking changes (new storage backend, changed
+# client internals) - rather than gamble on an untested range under deadline,
+# this stays conservative. Revisit this pin (and re-test) if you want newer
+# Chroma features.
+chromadb>=0.5.5,<0.6.0
+
 google-genai>=1.0.0
 
-
-# sentence-transformers==3.0.1
+# Optional: only needed if you pick "Local (sentence-transformers)" in the
+# sidebar embedding backend. Left commented out by default so cloud deploys
+# stay light and don't risk an out-of-memory crash from PyTorch on the free
+# 1GB RAM tier. Uncomment only for local/offline use.
+# sentence-transformers>=3.0.1
