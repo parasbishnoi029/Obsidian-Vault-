@@ -271,6 +271,108 @@ def inject_css():
                 animation: none;
             }
 
+            .orb-3d, .orb-3d .ring {
+                animation: none !important;
+            }
+
+        }
+
+
+        /* ==========================================================
+           3D KNOWLEDGE ORB — genuine 3D transform, not a flat spinner.
+           Three rings rotate on different axes inside a perspective
+           box, plus a pulsing core, so depth actually changes as it
+           turns rather than just scaling a 2D circle.
+        ========================================================== */
+
+        .orb-3d {
+
+            position: absolute;
+            top: 22px;
+            right: 46px;
+            width: 110px;
+            height: 110px;
+            perspective: 700px;
+            z-index: 2;
+
+        }
+
+
+        .orb-3d .ring {
+
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            transform-style: preserve-3d;
+
+        }
+
+
+        .orb-3d .ring.r1 {
+
+            border-top-color: var(--violet);
+            border-bottom-color: var(--violet);
+            animation: spinX 7s linear infinite;
+
+        }
+
+
+        .orb-3d .ring.r2 {
+
+            border-left-color: var(--gold);
+            border-right-color: var(--gold);
+            animation: spinY 9s linear infinite;
+
+        }
+
+
+        .orb-3d .ring.r3 {
+
+            border-top-color: var(--cyan);
+            border-left-color: var(--cyan);
+            animation: spinXY 12s linear infinite;
+
+        }
+
+
+        .orb-3d .core {
+
+            position: absolute;
+            inset: 32%;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(240,220,180,0.95), rgba(130,125,255,0.35) 70%);
+            box-shadow: 0 0 24px rgba(130,125,255,0.55), 0 0 40px rgba(240,185,93,0.25);
+            animation: corePulse 3s ease-in-out infinite;
+
+        }
+
+
+        @keyframes spinX {
+            from { transform: rotateX(0deg); }
+            to { transform: rotateX(360deg); }
+        }
+
+        @keyframes spinY {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(360deg); }
+        }
+
+        @keyframes spinXY {
+            from { transform: rotateX(0deg) rotateY(0deg); }
+            to { transform: rotateX(360deg) rotateY(360deg); }
+        }
+
+        @keyframes corePulse {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.15); opacity: 1; }
+        }
+
+
+        @media (max-width: 768px) {
+
+            .orb-3d { display: none; }
+
         }
 
 
@@ -780,6 +882,7 @@ with st.sidebar:
         if source_choice == "Sample vault":
 
             active_vault = SAMPLE_VAULT
+            st.session_state.uploaded_signature = None
 
         else:
 
@@ -1069,6 +1172,13 @@ status_text = (
 render_html(
     f"""
     <div class="hero">
+
+        <div class="orb-3d">
+            <div class="ring r1"></div>
+            <div class="ring r2"></div>
+            <div class="ring r3"></div>
+            <div class="core"></div>
+        </div>
 
         <div class="brand-row">
 
@@ -1387,3 +1497,20 @@ if question:
                     ),
                     language="markdown",
                 )
+
+
+# =============================================================================
+# FOOTER
+# =============================================================================
+
+st.write("")
+st.divider()
+
+render_html(
+    """
+    <div style="text-align:center; color:var(--text-muted); font-size:0.75rem; padding-bottom:1rem;">
+        ◈ Obsidian Vault Intelligence — answers are generated only from
+        retrieved evidence in your vault.
+    </div>
+    """
+)
