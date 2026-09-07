@@ -211,198 +211,92 @@ def inject_css():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 
-        /* ==========================================================
-           GLOBAL TOKENS
-        ========================================================== */
-
         :root {
 
             --bg: #090a12;
-
             --surface: rgba(20, 22, 35, 0.82);
-
             --surface-2: rgba(31, 34, 53, 0.85);
-
             --surface-3: rgba(44, 47, 70, 0.85);
-
             --border: rgba(255,255,255,0.08);
-
             --border-bright: rgba(130,125,255,0.45);
-
             --text: #f4f2ff;
-
             --text-muted: #9d9bb4;
-
             --violet: #827dff;
-
             --violet-2: #a19eff;
-
             --gold: #f0b95d;
-
             --cyan: #55d6ff;
-
             --green: #63e6a2;
-
             --red: #ff6b7a;
 
         }
 
 
-        /* ==========================================================
-           APP BACKGROUND
-        ========================================================== */
-
         [data-testid="stAppViewContainer"] {
 
             background:
-                radial-gradient(
-                    circle at 10% 15%,
-                    rgba(130,125,255,0.12),
-                    transparent 30%
-                ),
-
-                radial-gradient(
-                    circle at 85% 20%,
-                    rgba(240,185,93,0.08),
-                    transparent 25%
-                ),
-
-                radial-gradient(
-                    circle at 50% 90%,
-                    rgba(85,214,255,0.06),
-                    transparent 30%
-                ),
-
+                radial-gradient(circle at 10% 15%, rgba(130,125,255,0.12), transparent 30%),
+                radial-gradient(circle at 85% 20%, rgba(240,185,93,0.08), transparent 25%),
+                radial-gradient(circle at 50% 90%, rgba(85,214,255,0.06), transparent 30%),
                 var(--bg);
-
             overflow: hidden;
 
         }
 
 
-        /* ==========================================================
-           ANIMATED NETWORK BACKGROUND
-        ========================================================== */
-
         [data-testid="stAppViewContainer"]::before {
 
             content: "";
-
             position: fixed;
-
             inset: 0;
-
             pointer-events: none;
-
             opacity: 0.65;
-
             background-image:
+                radial-gradient(circle, rgba(130,125,255,0.65) 1px, transparent 1.5px),
+                radial-gradient(circle, rgba(240,185,93,0.5) 1px, transparent 1.5px);
+            background-size: 140px 140px, 210px 210px;
+            background-position: 0 0, 60px 90px;
+            mask-image: radial-gradient(ellipse at center, black, transparent 78%);
+            animation: backgroundFloat 25s linear infinite;
 
-                radial-gradient(
-                    circle,
-                    rgba(130,125,255,0.65) 1px,
-                    transparent 1.5px
-                ),
+        }
 
-                radial-gradient(
-                    circle,
-                    rgba(240,185,93,0.5) 1px,
-                    transparent 1.5px
-                );
 
-            background-size:
+        @media (prefers-reduced-motion: reduce) {
 
-                140px 140px,
-                210px 210px;
+            [data-testid="stAppViewContainer"]::before {
+                animation: none;
+            }
 
-            background-position:
-
-                0 0,
-                60px 90px;
-
-            mask-image:
-
-                radial-gradient(
-                    ellipse at center,
-                    black,
-                    transparent 78%
-                );
-
-            animation:
-                backgroundFloat 25s linear infinite;
+            .hero {
+                animation: none;
+            }
 
         }
 
 
         @keyframes backgroundFloat {
 
-            0% {
-
-                transform:
-                    translate3d(0,0,0);
-
-            }
-
-            50% {
-
-                transform:
-                    translate3d(-25px,20px,0);
-
-            }
-
-            100% {
-
-                transform:
-                    translate3d(0,0,0);
-
-            }
+            0% { transform: translate3d(0,0,0); }
+            50% { transform: translate3d(-25px,20px,0); }
+            100% { transform: translate3d(0,0,0); }
 
         }
 
 
-        /* ==========================================================
-           TYPOGRAPHY
-        ========================================================== */
-
-        html,
-        body,
-        [class*="css"] {
-
-            font-family:
-                "Inter",
-                sans-serif;
-
+        html, body, [class*="css"] {
+            font-family: "Inter", sans-serif;
         }
 
 
-        h1,
-        h2,
-        h3,
-        h4 {
-
-            font-family:
-                "Space Grotesk",
-                sans-serif;
-
+        h1, h2, h3, h4 {
+            font-family: "Space Grotesk", sans-serif;
         }
 
-
-        /* ==========================================================
-           SIDEBAR
-        ========================================================== */
 
         [data-testid="stSidebar"] {
 
-            background:
-
-                linear-gradient(
-                    180deg,
-                    rgba(20,20,34,0.98),
-                    rgba(13,14,25,0.98)
-                );
-
-            border-right:
-                1px solid var(--border);
+            background: linear-gradient(180deg, rgba(20,20,34,0.98), rgba(13,14,25,0.98));
+            border-right: 1px solid var(--border);
 
         }
 
@@ -410,63 +304,25 @@ def inject_css():
         [data-testid="stSidebar"]::before {
 
             content: "";
-
             position: absolute;
-
             inset: 0;
-
-            background:
-
-                radial-gradient(
-                    circle at 30% 20%,
-                    rgba(130,125,255,0.10),
-                    transparent 35%
-                );
-
+            background: radial-gradient(circle at 30% 20%, rgba(130,125,255,0.10), transparent 35%);
             pointer-events: none;
 
         }
 
 
-        /* ==========================================================
-           BRAND
-        ========================================================== */
-
         .hero {
 
             position: relative;
-
-            padding:
-
-                2rem 2.2rem;
-
-            border-radius:
-
-                24px;
-
+            padding: 2rem 2.2rem;
+            border-radius: 24px;
             overflow: hidden;
-
-            background:
-
-                linear-gradient(
-                    135deg,
-                    rgba(32,34,53,0.90),
-                    rgba(18,20,33,0.82)
-                );
-
-            border:
-                1px solid var(--border);
-
-            box-shadow:
-
-                0 25px 80px
-                rgba(0,0,0,0.35);
-
-            transform-style:
-                preserve-3d;
-
-            animation:
-                heroFloat 8s ease-in-out infinite;
+            background: linear-gradient(135deg, rgba(32,34,53,0.90), rgba(18,20,33,0.82));
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+            transform-style: preserve-3d;
+            animation: heroFloat 8s ease-in-out infinite;
 
         }
 
@@ -474,29 +330,14 @@ def inject_css():
         .hero::before {
 
             content: "";
-
             position: absolute;
-
             width: 400px;
-
             height: 400px;
-
             border-radius: 50%;
-
-            background:
-
-                radial-gradient(
-                    circle,
-                    rgba(130,125,255,0.16),
-                    transparent 70%
-                );
-
+            background: radial-gradient(circle, rgba(130,125,255,0.16), transparent 70%);
             right: -100px;
-
             top: -200px;
-
-            animation:
-                orbMove 10s ease-in-out infinite alternate;
+            animation: orbMove 10s ease-in-out infinite alternate;
 
         }
 
@@ -504,25 +345,12 @@ def inject_css():
         .hero::after {
 
             content: "";
-
             position: absolute;
-
             width: 260px;
-
             height: 260px;
-
             border-radius: 50%;
-
-            background:
-
-                radial-gradient(
-                    circle,
-                    rgba(240,185,93,0.10),
-                    transparent 70%
-                );
-
+            background: radial-gradient(circle, rgba(240,185,93,0.10), transparent 70%);
             left: -80px;
-
             bottom: -140px;
 
         }
@@ -530,44 +358,16 @@ def inject_css():
 
         @keyframes heroFloat {
 
-            0%, 100% {
-
-                transform:
-                    perspective(1200px)
-                    rotateX(0deg)
-                    rotateY(0deg)
-                    translateY(0);
-
-            }
-
-            50% {
-
-                transform:
-                    perspective(1200px)
-                    rotateX(0.8deg)
-                    rotateY(-0.8deg)
-                    translateY(-4px);
-
-            }
+            0%, 100% { transform: perspective(1200px) rotateX(0deg) rotateY(0deg) translateY(0); }
+            50% { transform: perspective(1200px) rotateX(0.8deg) rotateY(-0.8deg) translateY(-4px); }
 
         }
 
 
         @keyframes orbMove {
 
-            from {
-
-                transform:
-                    translate3d(0,0,0);
-
-            }
-
-            to {
-
-                transform:
-                    translate3d(-40px,60px,40px);
-
-            }
+            from { transform: translate3d(0,0,0); }
+            to { transform: translate3d(-40px,60px,40px); }
 
         }
 
@@ -575,95 +375,37 @@ def inject_css():
         .brand-row {
 
             position: relative;
-
             z-index: 2;
-
-            display:
-
-                flex;
-
-            align-items:
-
-                center;
-
-            gap:
-
-                18px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
 
         }
 
 
         .brand-icon {
 
-            width:
-                58px;
-
-            height:
-                58px;
-
-            border-radius:
-                18px;
-
-            display:
-
-                flex;
-
-            align-items:
-
-                center;
-
-            justify-content:
-
-                center;
-
-            font-size:
-                1.9rem;
-
-            background:
-
-                linear-gradient(
-                    135deg,
-                    rgba(130,125,255,0.9),
-                    rgba(85,214,255,0.55)
-                );
-
-            box-shadow:
-
-                0 15px 40px
-                rgba(130,125,255,0.35),
-
-                inset
-                0 1px 1px
-                rgba(255,255,255,0.25);
-
-            transform:
-                translateZ(40px);
+            width: 58px;
+            height: 58px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.9rem;
+            background: linear-gradient(135deg, rgba(130,125,255,0.9), rgba(85,214,255,0.55));
+            box-shadow: 0 15px 40px rgba(130,125,255,0.35), inset 0 1px 1px rgba(255,255,255,0.25);
+            transform: translateZ(40px);
 
         }
 
 
         .brand-title {
 
-            font-family:
-                "Space Grotesk",
-                sans-serif;
-
-            font-size:
-
-                clamp(
-                    1.8rem,
-                    3vw,
-                    2.7rem
-                );
-
-            font-weight:
-                700;
-
-            letter-spacing:
-                -0.05em;
-
-            color:
-                var(--text);
+            font-family: "Space Grotesk", sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.7rem);
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            color: var(--text);
 
         }
 
@@ -671,643 +413,263 @@ def inject_css():
         .brand-subtitle {
 
             position: relative;
-
             z-index: 2;
-
-            margin-top:
-
-                1rem;
-
-            color:
-
-                var(--text-muted);
-
-            max-width:
-
-                760px;
-
-            font-size:
-
-                1rem;
-
-            line-height:
-
-                1.7;
+            margin-top: 1rem;
+            color: var(--text-muted);
+            max-width: 760px;
+            font-size: 1rem;
+            line-height: 1.7;
 
         }
 
 
-        /* ==========================================================
-           STATUS BADGE
-        ========================================================== */
-
         .status-row {
 
             position: relative;
-
             z-index: 2;
-
-            display:
-
-                flex;
-
-            flex-wrap:
-
-                wrap;
-
-            gap:
-
-                10px;
-
-            margin-top:
-
-                1.3rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 1.3rem;
 
         }
 
 
         .status-pill {
 
-            padding:
-
-                7px 12px;
-
-            border-radius:
-
-                999px;
-
-            font-size:
-
-                0.75rem;
-
-            font-weight:
-
-                600;
-
-            border:
-
-                1px solid var(--border);
-
-            background:
-
-                rgba(255,255,255,0.04);
-
-            color:
-
-                var(--text-muted);
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-muted);
 
         }
 
 
         .status-pill.ready {
 
-            color:
-
-                var(--green);
-
-            border-color:
-
-                rgba(99,230,162,0.25);
-
-            background:
-
-                rgba(99,230,162,0.06);
+            color: var(--green);
+            border-color: rgba(99,230,162,0.25);
+            background: rgba(99,230,162,0.06);
 
         }
 
 
         .status-dot {
 
-            display:
-
-                inline-block;
-
-            width:
-
-                7px;
-
-            height:
-
-                7px;
-
-            border-radius:
-
-                50%;
-
-            margin-right:
-
-                6px;
-
-            background:
-
-                var(--green);
-
-            box-shadow:
-
-                0 0 12px
-                var(--green);
-
-            animation:
-
-                pulse 2s infinite;
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: var(--green);
+            box-shadow: 0 0 12px var(--green);
+            animation: pulse 2s infinite;
 
         }
 
 
         @keyframes pulse {
 
-            0%,100% {
-
-                opacity: 1;
-
-            }
-
-            50% {
-
-                opacity: 0.4;
-
-            }
+            0%,100% { opacity: 1; }
+            50% { opacity: 0.4; }
 
         }
 
 
-        /* ==========================================================
-           SIDEBAR CARDS
-        ========================================================== */
+        /* Sidebar step cards — real bordered containers (st.container(border=True)),
+           not manually-opened/closed divs, so they actually wrap their widgets. */
+        [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
 
-        .control-card {
-
-            padding:
-
-                14px;
-
-            margin:
-
-                12px 0;
-
-            border-radius:
-
-                16px;
-
-            background:
-
-                rgba(255,255,255,0.025);
-
-            border:
-
-                1px solid var(--border);
-
-            transition:
-
-                transform 0.25s ease,
-                border 0.25s ease,
-                box-shadow 0.25s ease;
+            background: rgba(255,255,255,0.025);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2px;
+            transition: transform 0.25s ease, border 0.25s ease, box-shadow 0.25s ease;
 
         }
 
 
-        .control-card:hover {
+        [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
 
-            transform:
-
-                perspective(900px)
-                translateY(-3px)
-                rotateX(1deg);
-
-            border-color:
-
-                rgba(130,125,255,0.3);
-
-            box-shadow:
-
-                0 15px 35px
-                rgba(0,0,0,0.25);
+            transform: perspective(900px) translateY(-3px) rotateX(1deg);
+            border-color: rgba(130,125,255,0.3);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.25);
 
         }
 
 
         .step-header {
 
-            display:
-
-                flex;
-
-            align-items:
-
-                center;
-
-            gap:
-
-                10px;
-
-            margin-bottom:
-
-                12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
 
         }
 
 
         .step-number {
 
-            width:
-
-                30px;
-
-            height:
-
-                30px;
-
-            border-radius:
-
-                50%;
-
-            display:
-
-                flex;
-
-            align-items:
-
-                center;
-
-            justify-content:
-
-                center;
-
-            font-size:
-
-                0.8rem;
-
-            font-weight:
-
-                700;
-
-            background:
-
-                var(--surface-3);
-
-            border:
-
-                1px solid var(--border);
-
-            color:
-
-                var(--text-muted);
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            flex-shrink: 0;
 
         }
 
 
         .step-number.done {
 
-            background:
-
-                linear-gradient(
-                    135deg,
-                    var(--gold),
-                    #d69532
-                );
-
-            color:
-
-                #1a1207;
-
-            border:
-
-                none;
-
-            box-shadow:
-
-                0 0 18px
-                rgba(240,185,93,0.35);
+            background: linear-gradient(135deg, var(--gold), #d69532);
+            color: #1a1207;
+            border: none;
+            box-shadow: 0 0 18px rgba(240,185,93,0.35);
 
         }
 
 
         .step-number.active {
 
-            background:
-
-                linear-gradient(
-                    135deg,
-                    var(--violet),
-                    var(--cyan)
-                );
-
-            color:
-
-                white;
-
-            border:
-
-                none;
-
-            box-shadow:
-
-                0 0 18px
-                rgba(130,125,255,0.4);
+            background: linear-gradient(135deg, var(--violet), var(--cyan));
+            color: white;
+            border: none;
+            box-shadow: 0 0 18px rgba(130,125,255,0.4);
 
         }
 
 
         .step-title {
 
-            font-weight:
-
-                700;
-
-            font-size:
-
-                0.9rem;
-
-            color:
-
-                var(--text);
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text);
 
         }
 
 
         .step-description {
 
-            font-size:
-
-                0.73rem;
-
-            color:
-
-                var(--text-muted);
-
-            margin-top:
-
-                2px;
+            font-size: 0.73rem;
+            color: var(--text-muted);
+            margin-top: 2px;
 
         }
 
 
-        /* ==========================================================
-           CHAT CARDS
-        ========================================================== */
+        /* Chat cards share the same bordered-container selector as sidebar
+           cards above — main-content instances get the "lift" hover instead
+           of the rotate, so message cards don't tilt while you're reading. */
+        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
 
-        [data-testid="stVerticalBlockBorderWrapper"] {
-
-            background:
-
-                rgba(23,25,39,0.70);
-
-            border:
-
-                1px solid
-                rgba(255,255,255,0.07);
-
-            border-radius:
-
-                18px;
-
-            box-shadow:
-
-                0 15px 45px
-                rgba(0,0,0,0.18);
-
-            backdrop-filter:
-
-                blur(15px);
-
-            transition:
-
-                transform 0.25s ease,
-                box-shadow 0.25s ease;
+            background: rgba(23,25,39,0.70);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 18px;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.18);
+            backdrop-filter: blur(15px);
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
 
         }
 
 
-        [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
 
-            transform:
-
-                translateY(-2px);
-
-            box-shadow:
-
-                0 20px 55px
-                rgba(0,0,0,0.28);
+            transform: translateY(-2px);
+            box-shadow: 0 20px 55px rgba(0,0,0,0.28);
 
         }
 
 
         .message-role {
 
-            display:
-
-                flex;
-
-            align-items:
-
-                center;
-
-            gap:
-
-                8px;
-
-            font-size:
-
-                0.72rem;
-
-            font-weight:
-
-                700;
-
-            letter-spacing:
-
-                0.1em;
-
-            text-transform:
-
-                uppercase;
-
-            margin-bottom:
-
-                8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
 
         }
 
 
-        .message-role.user {
+        .message-role.user { color: var(--violet-2); }
+        .message-role.assistant { color: var(--gold); }
 
-            color:
-
-                var(--violet-2);
-
-        }
-
-
-        .message-role.assistant {
-
-            color:
-
-                var(--gold);
-
-        }
-
-
-        /* ==========================================================
-           SOURCE CARDS
-        ========================================================== */
 
         .source-card {
 
-            padding:
-
-                13px;
-
-            border-radius:
-
-                12px;
-
-            margin-bottom:
-
-                10px;
-
-            background:
-
-                rgba(255,255,255,0.025);
-
-            border:
-
-                1px solid var(--border);
-
-            border-left:
-
-                3px solid var(--gold);
+            padding: 13px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            background: rgba(255,255,255,0.025);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--gold);
 
         }
 
 
         .source-name {
 
-            font-weight:
-
-                700;
-
-            color:
-
-                var(--text);
-
-            margin-bottom:
-
-                4px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 4px;
 
         }
 
 
         .source-score {
 
-            font-size:
-
-                0.75rem;
-
-            color:
-
-                var(--text-muted);
+            font-size: 0.75rem;
+            color: var(--text-muted);
 
         }
 
 
-        /* ==========================================================
-           BUTTONS
-        ========================================================== */
-
         .stButton button {
 
-            border-radius:
-
-                12px;
-
-            font-weight:
-
-                600;
-
-            border:
-
-                1px solid
-                rgba(130,125,255,0.35);
-
-            background:
-
-                linear-gradient(
-                    135deg,
-                    rgba(130,125,255,0.22),
-                    rgba(85,214,255,0.10)
-                );
-
-            transition:
-
-                transform 0.2s ease,
-                box-shadow 0.2s ease;
+            border-radius: 12px;
+            font-weight: 600;
+            border: 1px solid rgba(130,125,255,0.35);
+            background: linear-gradient(135deg, rgba(130,125,255,0.22), rgba(85,214,255,0.10));
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
 
         }
 
 
         .stButton button:hover {
 
-            transform:
-
-                translateY(-2px)
-                scale(1.01);
-
-            box-shadow:
-
-                0 10px 30px
-                rgba(130,125,255,0.2);
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 10px 30px rgba(130,125,255,0.2);
 
         }
 
-
-        /* ==========================================================
-           INPUTS
-        ========================================================== */
 
         [data-testid="stChatInput"] {
 
-            border-radius:
-
-                18px;
-
-            border:
-
-                1px solid
-                rgba(130,125,255,0.20);
-
-            background:
-
-                rgba(30,32,47,0.92);
-
-            box-shadow:
-
-                0 15px 45px
-                rgba(0,0,0,0.25);
+            border-radius: 18px;
+            border: 1px solid rgba(130,125,255,0.20);
+            background: rgba(30,32,47,0.92);
+            box-shadow: 0 15px 45px rgba(0,0,0,0.25);
 
         }
 
 
-        /* ==========================================================
-           MOBILE
-        ========================================================== */
-
         @media (max-width: 768px) {
 
-            .hero {
-
-                padding:
-
-                    1.4rem;
-
-            }
-
-            .brand-title {
-
-                font-size:
-
-                    1.7rem;
-
-            }
+            .hero { padding: 1.4rem; }
+            .brand-title { font-size: 1.7rem; }
 
         }
 
@@ -1404,139 +766,124 @@ with st.sidebar:
     # VAULT
     # -------------------------------------------------------------------------
 
-    st.markdown(
-        '<div class="control-card">',
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
 
-    source_choice = st.radio(
-        "Vault Source",
-        [
-            "Sample vault",
-            "Upload Markdown files",
-        ],
-        label_visibility="collapsed",
-    )
-
-    if source_choice == "Sample vault":
-
-        active_vault = SAMPLE_VAULT
-
-    else:
-
-        uploaded_files = st.file_uploader(
-            "Upload Markdown files",
-            type=["md"],
-            accept_multiple_files=True,
+        source_choice = st.radio(
+            "Vault Source",
+            [
+                "Sample vault",
+                "Upload Markdown files",
+            ],
+            label_visibility="collapsed",
         )
 
-        if uploaded_files:
+        if source_choice == "Sample vault":
 
-            signature = hashlib.sha256(
-                "".join(
-                    f"{file.name}-{file.size}"
-                    for file in uploaded_files
-                ).encode()
-            ).hexdigest()
+            active_vault = SAMPLE_VAULT
 
-            if signature != st.session_state.uploaded_signature:
+        else:
 
-                saved = save_uploaded_files(
-                    uploaded_files
-                )
+            uploaded_files = st.file_uploader(
+                "Upload Markdown files",
+                type=["md"],
+                accept_multiple_files=True,
+            )
 
-                st.session_state.uploaded_signature = signature
+            if uploaded_files:
 
-                st.toast(
-                    f"{saved} note(s) loaded",
-                    icon="📚",
-                )
+                signature = hashlib.sha256(
+                    "".join(
+                        f"{file.name}-{file.size}"
+                        for file in uploaded_files
+                    ).encode()
+                ).hexdigest()
 
-        active_vault = UPLOAD_VAULT
+                if signature != st.session_state.uploaded_signature:
 
-    vault_stats = get_vault_stats(
-        active_vault
-    )
+                    saved = save_uploaded_files(
+                        uploaded_files
+                    )
 
-    vault_ready = vault_stats["files"] > 0
+                    st.session_state.uploaded_signature = signature
 
-    render_step(
-        1,
-        "Select Vault",
-        (
-            f"{vault_stats['files']} Markdown notes ready"
-            if vault_ready
-            else "Choose a vault to continue"
-        ),
-        done=vault_ready,
-        active=not vault_ready,
-    )
+                    st.toast(
+                        f"{saved} note(s) loaded",
+                        icon="📚",
+                    )
 
-    if vault_ready:
+            active_vault = UPLOAD_VAULT
 
-        st.caption(
-            f"📄 {vault_stats['files']} files "
-            f"• {format_size(vault_stats['size'])}"
+        vault_stats = get_vault_stats(
+            active_vault
         )
 
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True,
-    )
+        vault_ready = vault_stats["files"] > 0
+
+        render_step(
+            1,
+            "Select Vault",
+            (
+                f"{vault_stats['files']} Markdown notes ready"
+                if vault_ready
+                else "Choose a vault to continue"
+            ),
+            done=vault_ready,
+            active=not vault_ready,
+        )
+
+        if vault_ready:
+
+            st.caption(
+                f"📄 {vault_stats['files']} files "
+                f"• {format_size(vault_stats['size'])}"
+            )
 
 
     # -------------------------------------------------------------------------
     # BACKEND
     # -------------------------------------------------------------------------
 
-    st.markdown(
-        '<div class="control-card">',
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
 
-    backend_label = st.radio(
-        "Embedding Engine",
-        [
-            "Gemini",
-            "Local sentence-transformers",
-        ],
-        label_visibility="collapsed",
-    )
-
-    backend = (
-        "gemini"
-        if backend_label == "Gemini"
-        else "local"
-    )
-
-    backend_ready = (
-        backend == "local"
-        or bool(api_key)
-    )
-
-    render_step(
-        2,
-        "Embedding Engine",
-        (
-            "Gemini cloud embeddings"
-            if backend == "gemini"
-            else "Local private embeddings"
-        ),
-        done=backend_ready,
-        active=not backend_ready,
-    )
-
-    if backend == "gemini" and not api_key:
-
-        st.warning(
-            "Gemini API key is not configured. "
-            "Switch to Local or configure GEMINI_API_KEY."
+        backend_label = st.radio(
+            "Embedding Engine",
+            [
+                "Gemini",
+                "Local sentence-transformers",
+            ],
+            label_visibility="collapsed",
         )
 
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True,
-    )
+        backend = (
+            "gemini"
+            if backend_label == "Gemini"
+            else "local"
+        )
+
+        backend_ready = (
+            backend == "local"
+            or bool(api_key)
+        )
+
+        render_step(
+            2,
+            "Embedding Engine",
+            (
+                "Gemini cloud embeddings"
+                if backend == "gemini"
+                else "Local private embeddings"
+            ),
+            done=backend_ready,
+            active=not backend_ready,
+        )
+
+        if backend == "gemini" and not api_key:
+
+            st.warning(
+                "Gemini API key is not configured. "
+                "Switch to Local or configure GEMINI_API_KEY in "
+                "Settings → Secrets."
+            )
 
 
     # -------------------------------------------------------------------------
@@ -1560,90 +907,82 @@ with st.sidebar:
         and chunk_count > 0
     )
 
-    st.markdown(
-        '<div class="control-card">',
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
 
-    render_step(
-        3,
-        "Knowledge Index",
-        (
-            f"{chunk_count} chunks ready"
-            if index_ready
-            else "Build semantic knowledge index"
-        ),
-        done=index_ready,
-        active=vault_ready and backend_ready and not index_ready,
-    )
+        render_step(
+            3,
+            "Knowledge Index",
+            (
+                f"{chunk_count} chunks ready"
+                if index_ready
+                else "Build semantic knowledge index"
+            ),
+            done=index_ready,
+            active=vault_ready and backend_ready and not index_ready,
+        )
 
-    if st.button(
-        "⚡ Build / Rebuild Index",
-        use_container_width=True,
-        disabled=not (
-            vault_ready
-            and backend_ready
-        ),
-    ):
-
-        with st.spinner(
-            "Reading notes and building vector intelligence..."
+        if st.button(
+            "⚡ Build / Rebuild Index",
+            use_container_width=True,
+            disabled=not (
+                vault_ready
+                and backend_ready
+            ),
         ):
 
-            try:
+            with st.spinner(
+                "Reading notes and building vector intelligence..."
+            ):
 
-                count = build_index(
-                    str(active_vault),
-                    backend=backend,
-                    api_key=api_key,
-                )
+                try:
 
-                if count > 0:
-
-                    st.session_state.index_metadata = {
-
-                        "fingerprint":
-                            get_vault_fingerprint(
-                                active_vault
-                            ),
-
-                        "backend":
-                            backend,
-
-                        "chunks":
-                            count,
-
-                    }
-
-                    st.session_state.messages = []
-
-                    st.success(
-                        f"Index ready: {count} chunks"
+                    count = build_index(
+                        str(active_vault),
+                        backend=backend,
+                        api_key=api_key,
                     )
 
-                    st.rerun()
+                    if count > 0:
 
-                else:
+                        st.session_state.index_metadata = {
 
-                    st.warning(
-                        "No chunks were created."
+                            "fingerprint":
+                                get_vault_fingerprint(
+                                    active_vault
+                                ),
+
+                            "backend":
+                                backend,
+
+                            "chunks":
+                                count,
+
+                        }
+
+                        st.session_state.messages = []
+
+                        st.success(
+                            f"Index ready: {count} chunks"
+                        )
+
+                        st.rerun()
+
+                    else:
+
+                        st.warning(
+                            "No chunks were created."
+                        )
+
+                except Exception as error:
+
+                    st.error(
+                        "Index build failed."
                     )
 
-            except Exception as error:
-
-                st.error(
-                    "Index build failed."
-                )
-
-                with st.expander(
-                    "Technical details"
-                ):
-                    st.exception(error)
-
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True,
-    )
+                    with st.expander(
+                        "Technical details"
+                    ):
+                        st.exception(error)
 
 
     # -------------------------------------------------------------------------
