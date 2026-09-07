@@ -47,22 +47,8 @@ with st.sidebar:
     # widget also isn't pre-filled with a stored value, since Streamlit's
     # password field can be un-hidden with its eye icon; pre-filling it would
     # let anyone who opens the (public) app reveal whatever key is loaded.
-    key_input = st.text_input(
-        "GEMINI_API_KEY", type="password",
-        value="",
-        placeholder="Paste your key here (re-enter each session)",
-        help="Free key at https://aistudio.google.com/apikey. Needed for both "
-             "embeddings (Gemini backend) and answer generation. Not stored "
-             "anywhere - you'll need to re-enter it if you reload the page."
-    )
-    if key_input:
-        st.session_state["gemini_api_key"] = key_input
-
-    api_key = st.session_state.get("gemini_api_key")
-    if api_key:
-        st.caption("✅ Key set for this session")
-
-    st.header("2. Vault")
+    
+    st.header("1. Vault")
     source_choice = st.radio("Use which notes?", ["Sample vault (demo)", "Upload my own .md files"])
 
     if source_choice == "Upload my own .md files":
@@ -77,7 +63,7 @@ with st.sidebar:
     else:
         active_vault = SAMPLE_VAULT
 
-    st.header("3. Embedding backend")
+    st.header("2. Embedding backend")
     backend = st.radio(
         "How to embed notes",
         ["Gemini (recommended)", "Local (sentence-transformers)"],
@@ -86,7 +72,7 @@ with st.sidebar:
     )
     backend_key = "gemini" if backend.startswith("Gemini") else "local"
 
-    st.header("4. Index")
+    st.header("3. Index")
     if st.button("🔨 Build / Rebuild Index", use_container_width=True):
         if not os.path.isdir(active_vault) or not os.listdir(active_vault):
             st.error("No notes found in the selected vault.")
