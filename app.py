@@ -10,13 +10,20 @@ Flow:
 3. User asks questions in a chat box; answers are grounded in retrieved
    chunks and cite the source note.
 
+API key: the Gemini key is configured server-side via Streamlit secrets
+(GEMINI_API_KEY) rather than typed into the UI. A per-visitor text box on a
+public app is the wrong shape for a secret — it either has to be re-entered
+every session (annoying) or gets stored somewhere shared (risky). Setting it
+once in the app's Secrets is the standard pattern for a single-owner
+deployment like this one.
+
 Visual design: themed around Obsidian's own graph-of-notes metaphor — the
 sidebar setup steps are drawn as connected nodes that light up as they're
-satisfied, and chat turns render as index-card entries rather than default
-chat bubbles. See the CSS block below for the token system.
+satisfied, with each step's control nested directly under its own node
+instead of being separated from it. Chat turns render as bordered cards
+with a colored role label. See the CSS block below for the token system.
 """
 
-import html
 import os
 import streamlit as st
 
@@ -29,6 +36,18 @@ st.set_page_config(page_title="Obsidian Vault RAG Assistant", page_icon="◈", l
 
 SAMPLE_VAULT = "data/sample_vault"
 UPLOAD_VAULT = "data/uploaded_vault"
+
+
+def _get_api_key():
+    """Server-side only: Streamlit secrets first, then env var. Never a
+    UI text box — see module docstring for why."""
+    try:
+        key = st.secrets.get("GEMINI_API_KEY")
+        if key:
+            return key
+    except Exception:
+        pass
+    return os.environ.get("GEMINI_API_KEY")
 
 
 # ---------------------------------------------------------------- styling
@@ -94,22 +113,23 @@ def _inject_css():
     .brand-title { font-size: 2.1rem; font-weight: 700; color: var(--text); margin: 0; letter-spacing: -0.01em; }
     .brand-sub { color: var(--text-dim); font-size: 0.95rem; margin-top: 2px; }
 
-    /* ---------- stepper ---------- */
-    .stepper { position: relative; padding-left: 6px; margin: 6px 0 20px 0; }
-    .step { position: relative; padding: 0 0 22px 30px; }
-    .step:last-child { padding-bottom: 4px; }
-    .step::before {
-        /* connecting line */
+    /* ---------- stepper: one continuous line behind interleaved nodes+controls ---------- */
+    .step-flow { position: relative; padding-left: 6px; }
+    .step-flow::before {
         content: "";
         position: absolute;
-        left: 9px; top: 20px; bottom: -4px;
+        left: 15px; top: 10px; bottom: 26px;
         width: 2px;
         background: var(--border);
+        z-index: 0;
     }
-    .step:last-child::before { display: none; }
-    .step.done::before { background: var(--gold-dim); }
+    .step-node {
+        position: relative; z-index: 1;
+        display: flex; align-items: flex-start; gap: 10px;
+        margin: 14px 0 6px 0;
+    }
     .step-orb {
-        position: absolute; left: 0; top: 0;
+        flex: 0 0 auto;
         width: 20px; height: 20px; border-radius: 50%;
         background: radial-gradient(circle at 35% 30%, #3a3660, var(--surface-2));
         border: 2px solid var(--border);
@@ -118,30 +138,19 @@ def _inject_css():
         box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
         transition: all 0.35s ease;
     }
-    .step.done .step-orb {
+    .step-node.done .step-orb {
         background: radial-gradient(circle at 35% 30%, #f0cf85, var(--gold));
         border-color: var(--gold);
         color: #1a1408;
         box-shadow: 0 0 10px rgba(217,169,78,0.55), inset 0 1px 2px rgba(255,255,255,0.4);
     }
-    .step.active .step-orb {
+    .step-node.active .step-orb {
         border-color: var(--violet);
         box-shadow: 0 0 8px rgba(109,106,255,0.5);
     }
-    .step-label { font-weight: 600; font-size: 0.92rem; color: var(--text); }
-    .step-hint { font-size: 0.8rem; color: var(--text-dim); margin-top: 1px; }
-
-    /* ---------- status pill ---------- */
-    .pill {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 3px 10px; border-radius: 999px;
-        font-size: 0.78rem; font-weight: 500;
-        border: 1px solid var(--border);
-        color: var(--text-dim);
-        margin-top: 6px;
-    }
-    .pill.on { border-color: var(--gold-dim); color: var(--gold); }
-    .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .step-label { font-weight: 600; font-size: 0.92rem; color: var(--text); line-height: 1.1; }
+    .step-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 1px; }
+    .step-body { margin-left: 30px; margin-bottom: 4px; }
 
     /* ---------- buttons ---------- */
     div[data-testid="stSidebar"] button {
@@ -191,6 +200,15 @@ def _logo_svg() -> str:
     """
 
 
+def _step_node(done: bool, active: bool, orb_text: str, label: str, hint: str):
+    state = "done" if done else ("active" if active else "")
+    st.markdown(
+        f'<div class="step-node {state}"><div class="step-orb">{orb_text}</div>'
+        f'<div><div class="step-label">{label}</div><div class="step-hint">{hint}</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _render_message(role: str, content: str):
     is_assistant = role == "assistant"
     label = "Assistant" if is_assistant else "You"
@@ -228,6 +246,8 @@ if "index_built" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+api_key = _get_api_key()
+
 _inject_css()
 
 st.markdown(
@@ -238,79 +258,52 @@ st.markdown(
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
-    key_input = st.text_input(
-        "Gemini API key", type="password",
-        value="",
-        placeholder="Paste your key here (re-enter each session)",
-        help="Free key at https://aistudio.google.com/apikey. Needed for both "
-             "embeddings (Gemini backend) and answer generation. Not stored "
-             "anywhere — you'll need to re-enter it if you reload the page."
-    )
-    if key_input:
-        st.session_state["gemini_api_key"] = key_input
-    api_key = st.session_state.get("gemini_api_key")
-    st.markdown(
-        f'<span class="pill {"on" if api_key else ""}"><span class="pill-dot"></span>'
-        f'{"Key set for this session" if api_key else "No key set yet"}</span>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="step-flow">', unsafe_allow_html=True)
 
-    st.divider()
-
+    # ---- step 1: vault ----
+    _step_node(True, False, "1", "Vault", "Choose your notes")
+    st.markdown('<div class="step-body">', unsafe_allow_html=True)
     source_choice = st.radio(
         "Vault", ["Sample vault (demo)", "Upload my own .md files"],
         label_visibility="collapsed",
     )
     if source_choice == "Upload my own .md files":
-        uploaded = st.file_uploader("Upload markdown files", type=["md"], accept_multiple_files=True)
+        uploaded = st.file_uploader("Upload markdown files", type=["md"], accept_multiple_files=True,
+                                     label_visibility="collapsed")
         if uploaded:
             os.makedirs(UPLOAD_VAULT, exist_ok=True)
             for f in uploaded:
                 with open(os.path.join(UPLOAD_VAULT, f.name), "wb") as out:
                     out.write(f.getbuffer())
-            st.success(f"Saved {len(uploaded)} file(s).")
+            st.caption(f"Saved {len(uploaded)} file(s).")
         active_vault = UPLOAD_VAULT
     else:
         active_vault = SAMPLE_VAULT
     vault_ready = os.path.isdir(active_vault) and bool(os.listdir(active_vault))
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    # ---- step 2: embedding backend ----
+    _step_node(vault_ready, not vault_ready, "2", "Embedding backend",
+               "Gemini needs a key configured on the server; Local needs none")
+    st.markdown('<div class="step-body">', unsafe_allow_html=True)
     backend = st.radio(
         "Embedding backend",
         ["Gemini (recommended)", "Local (sentence-transformers)"],
         label_visibility="collapsed",
-        help="Gemini: lightweight, works reliably on free-tier cloud deploys, needs the API key above. "
-             "Local: runs offline, no API key needed, but downloads a ~90MB model and uses more RAM."
     )
     backend_key = "gemini" if backend.startswith("Gemini") else "local"
     backend_ready = vault_ready and (backend_key == "local" or bool(api_key))
+    if backend_key == "gemini" and not api_key:
+        st.caption("⚠️ No GEMINI_API_KEY configured for this app — set it in "
+                   "Settings → Secrets, or switch to Local.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    # ---- step 3: index ----
     current_chunks = _index_chunk_count()
     index_ready = st.session_state.get("index_built") and current_chunks > 0
-
-    # ---- stepper reflecting the three states above ----
-    def _step_html(n_class, orb_text, label, hint):
-        return f'<div class="step {n_class}"><div class="step-orb">{orb_text}</div><div class="step-label">{label}</div><div class="step-hint">{hint}</div></div>'
-
-    active1 = "active" if not vault_ready else ""
-    active2 = "active" if vault_ready and not backend_ready else ""
-    active3 = "active" if backend_ready and not index_ready else ""
-
-    stepper_html = '<div class="stepper">'
-    stepper_html += _step_html(
-        "done" if vault_ready else active1, "✓" if vault_ready else "1",
-        "Vault", os.path.basename(active_vault) if vault_ready else "Add or upload notes"
-    )
-    stepper_html += _step_html(
-        "done" if backend_ready else active2, "✓" if backend_ready else "2",
-        "Embedding backend", backend_key.capitalize() if backend_ready else "Select a backend"
-    )
-    stepper_html += _step_html(
-        "done" if index_ready else active3, "✓" if index_ready else "3",
-        "Index", f"{current_chunks} chunks ready" if index_ready else "Not built yet"
-    )
-    stepper_html += '</div>'
-    st.markdown(stepper_html, unsafe_allow_html=True)
-
+    _step_node(index_ready, backend_ready and not index_ready, "3", "Index",
+               f"{current_chunks} chunks ready" if index_ready else "Not built yet")
+    st.markdown('<div class="step-body">', unsafe_allow_html=True)
     if st.button("Build / Rebuild Index", use_container_width=True, disabled=not backend_ready):
         with st.spinner("Chunking + embedding notes... this can take a minute for larger vaults."):
             try:
@@ -324,6 +317,9 @@ with st.sidebar:
             except Exception as e:
                 st.session_state["index_built"] = False
                 st.error(f"Indexing failed: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)  # close .step-flow
 
     st.divider()
     top_k = st.slider("Chunks to retrieve", 2, 10, 5)
@@ -347,7 +343,8 @@ if question:
     if not st.session_state.get("index_built"):
         answer = "No index has been built yet. Build it from the sidebar first, then ask again."
     elif backend_key == "gemini" and not api_key:
-        answer = "This index was built with Gemini embeddings — enter your API key in the sidebar to query it."
+        answer = ("This index needs Gemini embeddings, but no GEMINI_API_KEY is configured for "
+                  "this app right now. Ask the app owner to set one, or rebuild using the Local backend.")
     else:
         with st.spinner("Searching vault + generating answer..."):
             try:
@@ -363,7 +360,7 @@ if question:
         with st.expander(f"Sources used ({len(chunks)} chunks)"):
             for c in chunks:
                 st.markdown(
-                    f'<div class="source-slip"><b>{html.escape(c["source"])}</b> · distance {c["score"]:.3f}</div>',
+                    f'<div class="source-slip"><b>{c["source"]}</b> · distance {c["score"]:.3f}</div>',
                     unsafe_allow_html=True,
                 )
                 st.code(c["text"][:300] + ("..." if len(c["text"]) > 300 else ""))
@@ -372,6 +369,6 @@ if question:
 
 if not st.session_state.messages:
     st.info(
-        "Set your Gemini key, build the index from the sidebar, then ask a question below. "
+        "Build the index from the sidebar, then ask a question below. "
         "Try: *\"What are my notes on vector databases?\"* with the sample vault."
     )
