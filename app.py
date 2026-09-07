@@ -2,7 +2,6 @@ import os
 import shutil
 import hashlib
 import html
-import textwrap
 from pathlib import Path
 
 import streamlit as st
@@ -45,10 +44,19 @@ def clean_html(content: str) -> str:
     """
     Critical helper.
 
-    Streamlit treats indented Markdown/HTML as a code block.
-    textwrap.dedent removes the indentation.
+    textwrap.dedent only strips whitespace common to every line, which
+    is not enough for nested HTML templates (a div inside a div inside
+    an f-string) — inner lines are still left with 4+ leading spaces,
+    and Markdown treats 4+ leading spaces as a literal code block. That
+    silently turns real HTML into visible text like "<div class=...>".
+
+    Stripping every line individually guarantees no line ever hits that
+    4-space threshold, regardless of how deeply the template is nested.
+    Safe here because we only ever emit block-level tags (div/span),
+    where inter-tag whitespace has no visual effect.
     """
-    return textwrap.dedent(content).strip()
+    lines = content.strip("\n").split("\n")
+    return "\n".join(line.strip() for line in lines)
 
 
 def render_html(content: str):
@@ -768,6 +776,21 @@ def inject_css():
         }
 
 
+        /* Radio buttons default to Streamlit's red accent, which
+           clashes with the violet/gold palette — retint to match. */
+        [data-testid="stSidebar"] [data-baseweb="radio"] div:first-child {
+
+            border-color: var(--violet) !important;
+
+        }
+
+        [data-testid="stSidebar"] [data-baseweb="radio"] div:first-child > div {
+
+            background-color: var(--violet) !important;
+
+        }
+
+
         @media (max-width: 768px) {
 
             .hero { padding: 1.4rem; }
@@ -1150,6 +1173,47 @@ with st.sidebar:
             st.session_state.messages = []
 
             st.rerun()
+
+
+    # -------------------------------------------------------------------------
+    # USER MANUAL
+    # -------------------------------------------------------------------------
+
+    st.divider()
+
+    with st.expander("📖 User Manual"):
+
+        st.markdown(
+            """
+**1. Select Vault** — use the sample vault, or switch to
+"Upload Markdown files" and drop in your own `.md` notes.
+
+**2. Embedding Engine**
+- *Gemini*: better quality, needs `GEMINI_API_KEY` set in
+  `Settings → Secrets` (cloud) or `.streamlit/secrets.toml` (local).
+- *Local sentence-transformers*: no key needed, runs on-device.
+
+**3. Knowledge Index** — click **⚡ Build / Rebuild Index** any time
+you change vault, switch backend, or edit your notes. The app
+detects when the index is stale and tells you.
+
+**Asking questions** — once the index is ready, type in the chat
+box below, or use a quick-start button. Every answer opens an
+**Evidence Used** panel showing exactly which note chunks it came
+from, so you can verify or trace it back.
+
+**Troubleshooting**
+| Symptom | Fix |
+|---|---|
+| "Gemini API key is not configured" | Add the key in Secrets, or switch to Local |
+| Build button disabled | Finish steps 1 and 2 above it first |
+| "No chunks were created" | The selected folder has no readable `.md` files |
+| "index is not ready" on a question | Rebuild the index — vault or backend changed |
+
+A full deployment guide (Streamlit Community Cloud, `requirements.txt`,
+`.gitignore`) ships alongside this app as `USER_MANUAL.md`.
+            """
+        )
 
 
 # =============================================================================
