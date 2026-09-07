@@ -2,7 +2,7 @@
 ingest.py
 Walks an Obsidian vault (a folder of .md files), splits each note into
 overlapping chunks, embeds them, and stores everything in a persistent
-Chroma collection.
+NumPy-based vector store (see vectorstore.py for why this isn't ChromaDB).
 """
 
 import os
@@ -12,43 +12,37 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict
 
-import chromadb
 from rag.embeddings import get_embedding_function
+from rag.vectorstore import SimpleVectorStore
 
-CHROMA_DIR = "chroma_store"
+CHROMA_DIR = "chroma_store"  # kept the name for continuity with earlier versions
 COLLECTION_NAME = "obsidian_vault"
-CHUNK_SIZE = 800          # characters per chunk
-CHUNK_OVERLAP = 150       # overlap between consecutive chunks
-BACKEND_META_FILE = "backend.json"  # remembers which embedding backend built this index
+CHUNK_SIZE = 800
+CHUNK_OVERLAP = 150
+BACKEND_META_FILE = "backend.json"
 
 
 def _clean_markdown(text: str) -> str:
-    """Strip Obsidian-specific noise that doesn't help retrieval quality."""
-    text = re.sub(r"!\[\[.*?\]\]", "", text)          # embedded images/files
-    text = re.sub(r"\[\[([^\]|]+)\|?[^\]]*\]\]", r"\1", text)  # [[link|alias]] -> link
-    text = re.sub(r"#(\w+)", r"\1", text)              # #tags -> tags (keep the word)
-    text = re.sub(r"\n{3,}", "\n\n", text)              # collapse excess blank lines
+    text = re.sub(r"!\[\[.*?\]\]", "", text)
+    text = re.sub(r"\[\[([^\]|]+)\|?[^\]]*\]\]", r"\1", text)
+    text = re.sub(r"#(\w+)", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
 def _chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
-    """Simple sliding-window chunker on characters. Good enough for markdown notes;
-    swap for a token-aware splitter if notes get very long/technical."""
     if len(text) <= size:
         return [text] if text.strip() else []
-
     chunks = []
     start = 0
     while start < len(text):
         end = start + size
-        chunk = text[start:end]
-        chunks.append(chunk)
+        chunks.append(text[start:end])
         start += size - overlap
     return [c.strip() for c in chunks if c.strip()]
 
 
 def load_vault_files(vault_path: str) -> List[Dict]:
-    """Return a list of {path, content} for every markdown file in the vault."""
     files = []
     for p in Path(vault_path).rglob("*.md"):
         try:
@@ -62,20 +56,11 @@ def load_vault_files(vault_path: str) -> List[Dict]:
 
 def build_index(vault_path: str, persist_dir: str = CHROMA_DIR,
                  backend: str = "gemini", api_key: str = None) -> int:
-    """
-    Reads every .md file under vault_path, chunks + embeds it, and (re)builds
-    the Chroma collection. Returns number of chunks indexed.
-    """
     os.makedirs(persist_dir, exist_ok=True)
-    client = chromadb.PersistentClient(path=persist_dir)
-
-    try:
-        client.delete_collection(COLLECTION_NAME)
-    except Exception:
-        pass
 
     embed_fn = get_embedding_function(backend=backend, api_key=api_key)
-    collection = client.create_collection(name=COLLECTION_NAME, embedding_function=embed_fn)
+    store = SimpleVectorStore(persist_dir, COLLECTION_NAME)
+    store.clear()  # full rebuild each time, same behaviour as before
 
     files = load_vault_files(vault_path)
     if not files:
@@ -91,15 +76,17 @@ def build_index(vault_path: str, persist_dir: str = CHROMA_DIR,
             metadatas.append({"source": f["path"], "chunk_index": i})
 
     if docs:
-        BATCH = 64  # keep small - Gemini embedding backend calls the API per item
+        BATCH = 64
         for i in range(0, len(docs), BATCH):
-            collection.add(
+            batch_docs = docs[i:i + BATCH]
+            batch_embeddings = embed_fn(batch_docs)  # __call__ = document embeddings
+            store.add(
                 ids=ids[i:i + BATCH],
-                documents=docs[i:i + BATCH],
+                documents=batch_docs,
                 metadatas=metadatas[i:i + BATCH],
+                embeddings=batch_embeddings,
             )
 
-    # remember which backend built this index so retriever.py can match it
     with open(os.path.join(persist_dir, BACKEND_META_FILE), "w") as f:
         json.dump({"backend": backend}, f)
 
@@ -114,11 +101,11 @@ def get_index_backend(persist_dir: str = CHROMA_DIR) -> str:
     return "gemini"
 
 
-def get_collection(persist_dir: str = CHROMA_DIR, api_key: str = None):
-    client = chromadb.PersistentClient(path=persist_dir)
+def get_store_and_embedder(persist_dir: str = CHROMA_DIR, api_key: str = None):
+    """Returns (store, embed_fn) or (None, None) if nothing indexed yet."""
+    store = SimpleVectorStore(persist_dir, COLLECTION_NAME)
+    if store.count() == 0:
+        return None, None
     backend = get_index_backend(persist_dir)
-    try:
-        embed_fn = get_embedding_function(backend=backend, api_key=api_key)
-        return client.get_collection(name=COLLECTION_NAME, embedding_function=embed_fn)
-    except Exception:
-        return None
+    embed_fn = get_embedding_function(backend=backend, api_key=api_key)
+    return store, embed_fn

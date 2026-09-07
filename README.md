@@ -8,32 +8,39 @@ a 1-week MVP for a Generative AI Developer Intern take-home.
 
 1. Point it at a folder of `.md` notes (a sample vault ships with the repo,
    or upload your own).
-2. It chunks each note, embeds the chunks, and stores them in a vector
-   database (Chroma).
+2. It chunks each note, embeds the chunks, and stores them in a lightweight
+   NumPy-based vector store.
 3. Ask a question in the chat box. It retrieves the most relevant chunks
    and asks Gemini to answer **using only that context**, citing which
    note(s) the answer came from.
-4. If no Gemini key is set, it still runs — it falls back to showing the
-   raw retrieved passages, so the retrieval half of the pipeline is
-   demonstrable even without an API key. (Generating an *index* still needs
-   a key if using the Gemini embedding backend — see below.)
+4. If no Gemini key is set, it still runs for retrieval — see limitations
+   below on when generation needs a key.
 
 ## Why this approach
 
 I picked RAG over the scraping/agent options mainly for reliability under a
-hard deadline — no live-site scraping to break against rate limits, no
-multi-step agent loop to debug. Just a clean, testable pipeline: chunk →
-embed → retrieve → ground → generate. That's the core skill the role is
-evaluating, so I wanted each stage to be visible and independently testable
-rather than hidden behind one black-box call.
+hard deadline. Mid-build I also had to make a second reliability call: I
+originally used ChromaDB as the vector store, but it declares `tokenizers`
+(a Rust/PyO3 package) as a hard dependency even though this project never
+uses the embedder that needs it. On newer Python versions where PyO3 hasn't
+caught up yet, that dependency fails to build and breaks the whole install
+— independent of anything in this project's own code. Rather than fight a
+transitive dependency I don't need, I replaced ChromaDB with a small
+NumPy-only vector store (`rag/vectorstore.py`). Same retrieval behavior,
+zero compiled/Rust dependencies, works on any Python version NumPy supports.
+
+That decision — swapping out a dependency instead of patching around its
+failure — is itself part of what I'd want evaluated: recognizing when a
+library choice becomes the wrong choice under new constraints matters more
+than knowing the original API.
 
 ## Tech stack
 
 | Piece | Choice | Why |
 |---|---|---|
 | UI | Streamlit | fastest way to ship a usable chat UI + free one-click deploy |
-| Embeddings | Gemini `gemini-embedding-001` (default), local `sentence-transformers` (optional) | Gemini backend has no heavy dependency, so it doesn't risk OOM-ing on free-tier cloud hosting. Local is there for fully offline dev. |
-| Vector store | ChromaDB (persistent, local) | zero-config, no external service to provision |
+| Embeddings | Gemini `gemini-embedding-001` (default), local `sentence-transformers` (optional) | Gemini backend has no heavy dependency, so it doesn't risk OOM-ing on free-tier cloud hosting |
+| Vector store | Custom NumPy-based store (`rag/vectorstore.py`), JSON-persisted | Zero compiled dependencies — deploys cleanly on any Python version, including brand-new ones where compiled-wheel ecosystems haven't caught up yet |
 | Generation | `gemini-flash-latest` | fast, generous free tier, Google's stable alias so it doesn't break on the next model deprecation |
 | Chunking | custom sliding-window splitter (800 chars, 150 overlap) | simple, no extra dependency, easy to explain/tune |
 
@@ -57,7 +64,7 @@ data/sample_vault/*.md  ──┐
                            │
                   rag/embeddings.py     (Gemini API or local sentence-transformers)
                            │
-                     chroma_store/      (persistent vector index)
+                  rag/vectorstore.py    (NumPy cosine-similarity store, JSON-persisted)
                            │
                   rag/retriever.py      (top-k semantic search)
                            │
@@ -110,6 +117,10 @@ Easiest path — **Streamlit Community Cloud** (free):
 5. Deploy — you'll get a public `*.streamlit.app` URL. The key you set in
    Secrets pre-fills the sidebar field so evaluators don't need their own.
 
+This project has zero compiled/Rust dependencies left, so it should install
+cleanly regardless of which Python version Streamlit Cloud is currently
+defaulting to.
+
 (Hugging Face Spaces with the Streamlit SDK is a fine alternative.)
 
 ## Testing
@@ -119,23 +130,23 @@ pip install pytest
 pytest tests/ -v
 ```
 
-8 unit tests cover the network-independent parts of the pipeline: markdown
-cleaning (wiki-links, embeds, tags), the chunking algorithm (short text,
-long text with overlap, empty input), and vault file loading (including
-nested folders). The embedding/generation calls themselves aren't unit
-tested since they need a live API key — those were verified manually
-against the real Gemini API during development (see commit history / dev
-notes) rather than assumed to work from documentation alone.
+14 unit tests: markdown cleaning, the chunking algorithm, vault file
+loading, and the vector store (add/query/persistence/clear), all
+network-independent. The embedding/generation API calls themselves aren't
+unit tested since they need a live key — verified manually against the
+real Gemini API during development instead of assumed from documentation.
 
 ## Known limitations (MVP scope)
 
-- Chunking is character-based, not token/semantic-aware — fine for note-sized
-  markdown, would want a smarter splitter for longer/denser documents.
+- Chunking is character-based, not token/semantic-aware.
 - Index rebuilds are full rebuilds, not incremental.
-- No conversation-aware retrieval (each question is retrieved independently,
-  not re-written using chat history).
-- Gemini embedding backend calls the API once per chunk (no batch embed
-  endpoint used yet) — fine at demo scale, would batch for a larger vault.
+- The vector store loads all embeddings into memory and does a linear scan
+  per query (`O(n)`) — completely fine at note-collection scale (hundreds to
+  low thousands of chunks), would need a proper ANN index (or reintroducing
+  a vector DB, once the Python-version/dependency situation settles) at
+  much larger scale.
+- No conversation-aware retrieval (each question is retrieved independently).
+- Gemini embedding backend calls the API once per chunk, not batched.
 
 ## What I'd add with more time
 

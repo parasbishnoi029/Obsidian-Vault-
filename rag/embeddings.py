@@ -2,31 +2,34 @@
 embeddings.py
 Pluggable embedding backends.
 
-Why this file exists: the first draft of this project embedded locally
-with sentence-transformers (pulls in PyTorch). That's fine on a dev
-machine but risks failing / OOM-ing on Streamlit Community Cloud's free
-tier (1GB RAM) - which would break the "live demo must be working"
-requirement. So the default backend is Gemini's hosted embedding API
-(no heavy local dependency, no model download). Local embeddings stay
-available as an opt-in for offline dev use.
+Default is Gemini's hosted embedding API - lightweight, no heavy local
+dependency, no model download, so it doesn't risk failing on constrained or
+version-mismatched cloud environments. Local sentence-transformers is kept
+as an opt-in for offline dev use.
 
-MODEL/SDK NOTES (verified live against Google's docs, not assumed from
-training data - these change fast):
-- text-embedding-004 was fully shut down Jan 14, 2026. Do not use it.
+MODEL/SDK NOTES (verified live, not assumed from training data):
+- text-embedding-004 was fully shut down Jan 14, 2026 - do not use it.
 - gemini-embedding-001 is the current generally-available embedding model.
-- The old `google-generativeai` package is end-of-life. This uses the
-  current `google-genai` package (`from google import genai`).
+- The old `google-generativeai` package is end-of-life - this uses the
+  current `google-genai` package instead.
+
+NOTE: this file intentionally has no dependency on chromadb. Earlier
+versions subclassed chromadb.EmbeddingFunction, but chromadb itself pulls in
+`tokenizers` (a Rust/PyO3 package) as a hard dependency even when unused,
+which broke installs on newer Python versions before PyO3 caught up. This
+project now uses its own minimal interface instead: any object with a
+__call__(list[str]) -> list[list[float]] method (for documents) and an
+embed_query(list[str]) -> list[list[float]] method (for queries).
 """
 
 import os
 import time
-from chromadb import EmbeddingFunction, Documents, Embeddings
 
 GEMINI_EMBED_MODEL = "gemini-embedding-001"
 LOCAL_EMBED_MODEL = "all-MiniLM-L6-v2"
 
 
-class GeminiEmbeddingFunction(EmbeddingFunction):
+class GeminiEmbeddingFunction:
     """Uses Gemini's hosted embedding API. Distinguishes document vs query
     embeddings via task_type - measurably improves retrieval quality for
     asymmetric search (short query -> longer passage)."""
@@ -57,25 +60,31 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
                     time.sleep(2 * (attempt + 1))
         return out
 
-    def __call__(self, input: Documents) -> Embeddings:
+    def __call__(self, input):
         return self._embed(input, task_type="RETRIEVAL_DOCUMENT")
 
-    def embed_query(self, input: Documents) -> Embeddings:
+    def embed_query(self, input):
         return self._embed(input, task_type="RETRIEVAL_QUERY")
 
-    def name(self) -> str:
-        return "gemini-embedding-001"
 
+class LocalEmbeddingFunction:
+    """Offline backend using sentence-transformers directly (no chromadb
+    dependency). Only imported when actually selected."""
 
-def get_local_embedding_function():
-    """Optional offline backend - only imports sentence-transformers when
-    actually selected, so the Gemini path never pays that dependency cost."""
-    from chromadb.utils import embedding_functions
-    return embedding_functions.SentenceTransformerEmbeddingFunction(model_name=LOCAL_EMBED_MODEL)
+    def __init__(self):
+        from sentence_transformers import SentenceTransformer
+        self._model = SentenceTransformer(LOCAL_EMBED_MODEL)
+
+    def __call__(self, input):
+        return self._model.encode(input, convert_to_numpy=True).tolist()
+
+    def embed_query(self, input):
+        # symmetric model - same encoding path for queries and documents
+        return self.__call__(input)
 
 
 def get_embedding_function(backend: str = "gemini", api_key: str = None):
     """backend: 'gemini' (default, recommended for deployment) or 'local'."""
     if backend == "local":
-        return get_local_embedding_function()
+        return LocalEmbeddingFunction()
     return GeminiEmbeddingFunction(api_key=api_key)

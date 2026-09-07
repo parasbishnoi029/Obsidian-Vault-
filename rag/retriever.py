@@ -1,22 +1,19 @@
 """
 retriever.py
-Thin wrapper around the Chroma collection for top-k semantic search.
+Thin wrapper for top-k semantic search over the NumPy-based vector store.
 """
 
 from typing import List, Dict
-from rag.ingest import get_collection
+from rag.ingest import get_store_and_embedder
 
 
 def retrieve(query: str, top_k: int = 5, persist_dir: str = "chroma_store", api_key: str = None) -> List[Dict]:
-    """
-    Returns a list of {text, source, score} for the top_k most relevant chunks.
-    score is a distance (lower = more similar) as returned by Chroma.
-    """
-    collection = get_collection(persist_dir, api_key=api_key)
-    if collection is None or collection.count() == 0:
+    store, embed_fn = get_store_and_embedder(persist_dir, api_key=api_key)
+    if store is None:
         return []
 
-    results = collection.query(query_texts=[query], n_results=top_k)
+    query_embedding = embed_fn.embed_query([query])[0]
+    results = store.query(query_embedding, n_results=top_k)
 
     hits = []
     docs = results.get("documents", [[]])[0]
