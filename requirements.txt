@@ -1,16 +1,5 @@
 
-streamlit>=1.38.0
-numpy
-google-genai>=1.0.0
-
-index_metadata.json
-
-{
-  "version": "2.0",
-  "embedding_backend": "gemini",
-  "embedding_model": "...",
-  "vault_fingerprint": "a8e7c912...",
-  "document_count": 42,
-  "chunk_count": 318,
-  "created_at": "..."
-}
+streamlit==1.63.0
+google-genai==2.22.0
+numpy>=2.0.0
+sentence-transformers>=3.0.0
